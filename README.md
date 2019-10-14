@@ -47,6 +47,16 @@ If you import new prerequisites in your source code:
 - Re-run both the unit test and buld.
 - Push the updated `Gopkg.lock` and `Gopkg.toml`. 
 
+#### Running in OpenShift
+Running Kabanero Webhook in OpenShift can be done using `oc new-app` like so:
+```bash
+oc new-app kabanero/webhook -e GH_USER=<github-username> -e GH_TOKEN=<github-token> -e GH_URL=https://api.github.ibm.com
+```
+
+The environment variables `GH_USER` and `GH_TOKEN` are necessary at the moment to be able to use GitHub's API. This
+configuration will eventually be read from a Kubernetes Secret.
+
+The environment variable `GH_URL` is only necessary for GitHub Enterprise. It should be set to your GHE's API URL.
 
 <a name="Functional_Spec"></a>
 ## Functional Specifications
