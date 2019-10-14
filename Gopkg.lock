@@ -207,6 +207,17 @@
   version = "v1.4.0"
 
 [[projects]]
+  digest = "1:39f43a9ea4af920abf322d1770c5fbf337286cb174a25827b22e1da72dcfdb5c"
+  name = "gopkg.in/go-playground/webhooks.v3"
+  packages = [
+    ".",
+    "github",
+  ]
+  pruneopts = "UT"
+  revision = "8ffb2ffc32b7af2c7e940944eccba4dcd66c692a"
+  version = "v3.13.0"
+
+[[projects]]
   digest = "1:ef72505cf098abdd34efeea032103377bec06abb61d8a06f002d5d296a4b1185"
   name = "gopkg.in/inf.v0"
   packages = ["."]
@@ -405,6 +416,7 @@
   analyzer-version = 1
   input-imports = [
     "github.com/google/go-github/github",
+    "gopkg.in/go-playground/webhooks.v3/github",
     "k8s.io/api/core/v1",
     "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured",
     "k8s.io/apimachinery/pkg/watch",
