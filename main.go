@@ -19,6 +19,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -26,7 +27,7 @@ import (
 	"strings"
 	"syscall"
 
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
@@ -35,16 +36,19 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 	"k8s.io/klog"
+	ghw "gopkg.in/go-playground/webhooks.v3/github"
 )
 
 const (
 	kubeAPIURL = "http://localhost:9080"
 )
 
+
 var (
 	masterURL  string        // URL of Kube master
 	kubeconfig string        // path to kube config file. default <home>/.kube/config
 	klogFlags  *flag.FlagSet // flagset for logging
+	gitHubListener *GitHubListener // Listens for and handles GH events
 )
 
 func init() {
@@ -77,7 +81,7 @@ func main() {
 		}
 	} else {
 		// running inside the Kube cluster
-		klog.Infof("starting Kabanero webhook status controler inside cluster\n")
+		klog.Infof("starting Kabanero webhook status controller inside cluster\n")
 		cfg, err = rest.InClusterConfig()
 		if err != nil {
 			klog.Fatal(err)
@@ -107,6 +111,31 @@ func main() {
 	// if err != nil {
 	//	klog.Fatal(err)
 	//}
+
+	http.HandleFunc("/", func (w http.ResponseWriter, r *http.Request) {
+		payload, err := gitHubListener.ParseEvent(r)
+
+		if err == nil {
+
+			switch payload.(type) {
+			case ghw.PushPayload:
+				pushPayload := payload.(ghw.PushPayload)
+				klog.Infof("Received Push event:\n%v\n", payload)
+
+				owner, repo := GetOwnerAndRepo(pushPayload.Repository.SSHURL)
+				appsodyConfig, err := gitHubListener.GetFile(owner, repo, ".appsody-config.yaml")
+				if err == nil {
+					klog.Infof("Appsody information from repo: %s", appsodyConfig)
+				} else {
+					klog.Error(err)
+				}
+			}
+		} else {
+			klog.Error(err)
+		}
+	})
+
+	klog.Fatal(http.ListenAndServe(":8080", nil))
 
 	select {}
 }
@@ -182,4 +211,10 @@ func init() {
 	// init falgs for klog
 	klog.InitFlags(nil)
 
+	// Handle GitHub events
+	var err error
+	if gitHubListener, err = NewGitHubEventListener(); err != nil {
+		klog.Error(err)
+		os.Exit(1)
+	}
 }

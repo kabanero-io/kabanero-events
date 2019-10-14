@@ -33,6 +33,8 @@ COPY *.go ./
 # Linter
 RUN go get -u golang.org/x/lint/golint; golint -set_exit_status
 
+RUN go get -u gopkg.in/go-playground/webhooks.v3/github
+
 # Run unit test
 # COPY test_data ./test_data/
 # RUN go test -v
@@ -65,6 +67,7 @@ COPY --chown=1001:0 licenses/ /licenses/
 # COPY --chown=1001:0 testcntlr.sh /bin/testcntlr.sh
 USER 1001
 WORKDIR /app
+EXPOSE 8080
 
 # run with log level 2
 # Note liveness/readiness probe depends on './webhook'
