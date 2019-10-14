@@ -4,3 +4,7 @@
 vendor/
 # executable
 kabanero-webhook
+
+### Intellij ###
+.idea
+out/
