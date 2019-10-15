@@ -33,8 +33,6 @@ COPY *.go ./
 # Linter
 RUN go get -u golang.org/x/lint/golint; golint -set_exit_status
 
-RUN go get -u gopkg.in/go-playground/webhooks.v3/github
-
 # Run unit test
 # COPY test_data ./test_data/
 # RUN go test -v

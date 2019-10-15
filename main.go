@@ -116,19 +116,9 @@ func main() {
 		payload, err := gitHubListener.ParseEvent(r)
 
 		if err == nil {
-
 			switch payload.(type) {
 			case ghw.PushPayload:
-				pushPayload := payload.(ghw.PushPayload)
 				klog.Infof("Received Push event:\n%v\n", payload)
-
-				owner, repo := GetOwnerAndRepo(pushPayload.Repository.SSHURL)
-				appsodyConfig, err := gitHubListener.GetFile(owner, repo, ".appsody-config.yaml")
-				if err == nil {
-					klog.Infof("Appsody information from repo: %s", appsodyConfig)
-				} else {
-					klog.Error(err)
-				}
 			}
 		} else {
 			klog.Error(err)

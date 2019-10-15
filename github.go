@@ -17,7 +17,7 @@ import (
 type Event string
 
 // EventHandler Handler for an event
-type EventHandler func(*http.Request) (interface{}, error)
+type EventHandler func(*GitHubListener, *http.Request) (interface{}, error)
 
 // GitHubListener Event listener for GitHub events
 type GitHubListener struct {
@@ -91,7 +91,7 @@ func NewGitHubEventListener() (*GitHubListener, error) {
 	listener := new(GitHubListener)
 	listener.Client = client
 	listener.Events = make(map[Event]EventHandler)
-	listener.Events[PushEvent] = handlePushEvent
+	listener.Events[PushEvent] = (*GitHubListener).handlePushEvent
 	return listener, nil
 }
 
@@ -108,7 +108,7 @@ func (listener *GitHubListener) ParseEvent(r *http.Request) (interface{}, error)
 	}
 
 	if eventHandler := listener.Events[event]; eventHandler != nil {
-		return eventHandler(r)
+		return eventHandler(listener, r)
 	}
 
 	return nil, ErrUnknownEvent
@@ -117,11 +117,10 @@ func (listener *GitHubListener) ParseEvent(r *http.Request) (interface{}, error)
 // GetFile Retrieve file contents from a GitHub repository
 func (listener *GitHubListener) GetFile(owner, repo, path string) (string, error) {
 	rc, err := listener.Client.Repositories.DownloadContents(context.Background(), owner, repo, path, nil)
-	//rc.Close()
-
 	if err != nil {
 		return "", err
 	}
+	defer rc.Close()
 
 	if buf, err := ioutil.ReadAll(rc); err == nil {
 		return string(buf), nil
@@ -140,7 +139,7 @@ func getPayload(r *http.Request, eventPayload interface{}) error {
 	return json.Unmarshal([]byte(payload), eventPayload)
 }
 
-func handlePushEvent(r *http.Request) (interface{}, error) {
+func (listener *GitHubListener) handlePushEvent(r *http.Request) (interface{}, error) {
 	var payload ghw.PushPayload
 	err := getPayload(r, &payload)
 	if err != nil {
@@ -148,11 +147,18 @@ func handlePushEvent(r *http.Request) (interface{}, error) {
 		return nil, err
 	}
 
+	owner, repo := getOwnerAndRepo(payload.Repository.SSHURL)
+	appsodyConfig, err := gitHubListener.GetFile(owner, repo, ".appsody-config.yaml")
+	if err == nil {
+		klog.Infof("Appsody information from repo: %s", appsodyConfig)
+	} else {
+		klog.Error(err)
+	}
+
 	return payload, nil
 }
 
-// GetOwnerAndRepo Get the owner and repo of a Git repository
-func GetOwnerAndRepo(gitURL string) (string, string) {
+func getOwnerAndRepo(gitURL string) (string, string) {
 	// Strip off the Git URL and .git suffix, leaving owner/repo
 	gitURL = gitURL[strings.Index(gitURL, ":") + 1:]
 	gitURL = gitURL[:len(gitURL) - 4]
