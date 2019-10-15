@@ -42,6 +42,8 @@ import (
 
 const (
 	kubeAPIURL = "http://localhost:9080"
+	DEFAULT_NAMESPACE = "kabanero"
+    KUBE_NAMESPACE = "KUBE_NAMESPACE"
 )
 
 
@@ -53,6 +55,7 @@ var (
 	kubeClient *kubernetes.Clientset
 	discClient  *discovery.DiscoveryClient
 	dynamicClient dynamic.Interface
+	webhook_namespace string
 )
 
 func init() {
@@ -103,6 +106,12 @@ func main() {
 		klog.Fatal(err)
 	}
 	klog.Infof("Received discClient %T, dynamicClient  %T\n", discClient, dynamicClient)
+
+	/* Get namespace of where we are installed */
+	webhook_namespace = os.Getenv(KUBE_NAMESPACE)
+    if webhook_namespace == "" {
+            webhook_namespace = DEFAULT_NAMESPACE
+	}
 
 	// gvr := schema.GroupVersionResource { Group: "app.k8s.io", Version: "v1beta1", Resource: "applications" }
 	// deleteOrphanedAutoCreatedApplications(dynamicClient, gvr )
