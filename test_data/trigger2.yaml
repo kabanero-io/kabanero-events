@@ -1,0 +1,26 @@
+variables:
+  - name: var1
+    value: event.attr1
+  - name: var2
+    value: event.attr2
+triggers:
+  - when: 'var1 == "string1"'
+    triggers:
+      - when: 'var2 == "string2"'
+        action:
+          applyResources:
+            directory: 'string1string2'
+      - when: 'var2 != "string2"'
+        action:
+          applyResources:
+            directory: 'string1notstring2'
+  - when: 'var1 != "string1"'
+    triggers:
+      - when: 'var2 == "string2"'
+        action:
+          applyResources:
+            directory: 'notstring1string2'
+      - when: 'var2 != "string2"'
+        action:
+          applyResources:
+            directory: 'notstring1notstring2'

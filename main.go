@@ -30,6 +30,7 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/discovery" 
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -49,6 +50,9 @@ var (
 	kubeconfig string        // path to kube config file. default <home>/.kube/config
 	klogFlags  *flag.FlagSet // flagset for logging
 	gitHubListener *GitHubListener // Listens for and handles GH events
+	kubeClient *kubernetes.Clientset
+	discClient  *discovery.DiscoveryClient
+	dynamicClient dynamic.Interface
 )
 
 func init() {
@@ -88,14 +92,12 @@ func main() {
 		}
 	}
 
-	var kubeClient *kubernetes.Clientset
 	kubeClient, err = kubernetes.NewForConfig(cfg)
 	if err != nil {
 		klog.Fatal(err)
 	}
 
-	var discClient = kubeClient.DiscoveryClient
-	var dynamicClient dynamic.Interface
+	discClient = kubeClient.DiscoveryClient
 	dynamicClient, err = dynamic.NewForConfig(cfg)
 	if err != nil {
 		klog.Fatal(err)
@@ -111,6 +113,11 @@ func main() {
 	// if err != nil {
 	//	klog.Fatal(err)
 	//}
+
+	// Handle GitHub events
+	if gitHubListener, err = NewGitHubEventListener(); err != nil {
+		klog.Fatal(err)
+	}
 
 	http.HandleFunc("/", func (w http.ResponseWriter, r *http.Request) {
 		payload, err := gitHubListener.ParseEvent(r)
@@ -201,10 +208,4 @@ func init() {
 	// init falgs for klog
 	klog.InitFlags(nil)
 
-	// Handle GitHub events
-	var err error
-	if gitHubListener, err = NewGitHubEventListener(); err != nil {
-		klog.Error(err)
-		os.Exit(1)
-	}
 }

@@ -8,3 +8,7 @@ kabanero-webhook
 ### Intellij ###
 .idea
 out/
+
+
+### Windows ###
+*.exe
