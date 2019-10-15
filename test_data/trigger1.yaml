@@ -1,0 +1,65 @@
+variables:
+  - name: int64Attr
+    value: 1
+  - name: float64Attr
+    value: 1.2
+  - name: boolAttr
+    value: true
+  - name: arrayStringAttr
+    value: '[ "abc", "def", "ghi" ]'
+  - name: arrayIntAttr
+    value: '[ 1, 2, 3 ]'
+  - name: eventIntAttr
+    value: event.intAttr
+  - name: eventFloatAttr
+    value: event.floatAttr
+  - name: eventBoolAttr
+    value: event.boolAttr
+  - name: eventArrayElementAttr
+    value: event.arrayAttr[0]
+  - name: eventArrayAttr
+    value: event.arrayAttr
+  - name: eventObjectAttr
+    value: event.objectAttr
+  - name: eventObjectInnerFloatAttr
+    value: event.objectAttr.innerFloatAttr
+  - name: mathAttr1
+    value: event.intAttr + 2.0
+  - name: mathAttr2
+    value: event.floatAttr + 2.0
+  - name: listAttrWithVariables
+    value: '[ "abc", event.stringAttr ]'
+  - name: ifThenElseStringAttr
+    value: 'event.stringAttr == "string1" ? "got-string-1" : "no-string-1"'
+  - name: reuseInt64Attr
+    value: int64Attr
+  - name: reuseFloat64Attr
+    value: float64Attr
+  - name: reuseboolAttr
+    value: boolAttr
+  - name: reusearrayStringAttr
+    value: arrayStringAttr
+  - name: reuseArrayIntAttr
+    value: arrayIntAttr
+  - name: reuseEventIntAttr
+    value: eventIntAttr
+  - name: reuseEventFloatAttr
+    value: eventFloatAttr
+  - name: reuseEventBoolAttr
+    value: eventBoolAttr
+  - name: reuseEventArrayElementAttr
+    value: eventArrayElementAttr
+  - name: reuseEventArrayAttr
+    value: eventArrayAttr
+  - name: reuseEventObjectAttr
+    value: eventObjectAttr
+  - name: reuseEventObjectInnerFloatAttr
+    value: eventObjectInnerFloatAttr
+  - name: reuseMathAttr1
+    value: mathAttr1
+  - name: reuseMathAttr2
+    value: mathAttr2
+  - name: reuseListAttrWithVariables
+    value: listAttrWithVariables
+  - name: reuseIfThenElseStringAttr
+    value: ifThenElseStringAttr
