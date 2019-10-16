@@ -143,10 +143,11 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}) error
 				 return err
 			 }
 			 /* Apply the file */
+			 klog.Infof("applying resource: %s", substituted)
 			 err = createResource(substituted, dynamicClient)
-                         if err != nil {
-                             return err
-                         }
+             if err != nil {
+                 return err
+             }
 		} else {
 		   klog.Infof("Skipping processing file %s", path)
 		}

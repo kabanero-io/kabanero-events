@@ -29,11 +29,19 @@ import (
 
 const (
 	V1 = "v1"
+	V1ALPHA1 = "v1alpha1"
+	KABANEROIO = "kabanero.io"
+	KABANERO = "kabanero"
+	KABANEROS = "kabaneros"
 	DATA = "data"
     URL = "url"
 	USERNAME = "username"
 	TOKEN = "token"
 	SECRETS = "secrets"
+	SPEC = "spec"
+	COLLECTIONS = "collections"
+	REPOSITORIES = "repositories"
+	ACTIVE_DEFAULT_COLLECTIONS = "activeDefaultCollections"
 )
 
 /*
@@ -127,4 +135,82 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 		return string(decodedUserName), string(decodedToken), nil
 	}
 	return "", "", fmt.Errorf("Unable to find API token for url: %s", repoURL)
+}
+
+/* Get the URL to kabanero-index.yaml
+*/
+func getKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string, error){
+	gvr := schema.GroupVersionResource{
+		Group:    KABANEROIO,
+		Version:  V1ALPHA1,
+		Resource: KABANEROS,
+	}
+	var intfNoNS = dynInterf.Resource(gvr)
+	var intf dynamic.ResourceInterface
+	intf = intfNoNS.Namespace(namespace)
+
+	// fetch the current resource
+	var unstructuredList *unstructured.UnstructuredList
+	var err error
+	unstructuredList, err = intf.List(metav1.ListOptions{})
+	if err != nil {
+		return "", err
+	}
+
+	for _, unstructuredObj := range unstructuredList.Items {
+	    var objMap = unstructuredObj.Object
+		specMapObj, ok := objMap[SPEC]
+		if !ok {
+			continue
+		}
+
+    	specMap, ok := specMapObj.(map[string]interface{})
+    	if !ok {
+    		continue
+		}
+
+		collectionsMapObj, ok := specMap[COLLECTIONS]
+		if !ok {
+			continue
+		}
+		collectionMap, ok := collectionsMapObj.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		repositoriesInterface, ok := collectionMap[REPOSITORIES]
+		if !ok {
+			continue
+		}
+		repositoriesArray, ok :=repositoriesInterface.([]interface{})
+		if !ok {
+			continue
+		}
+		for _, elementObj := range repositoriesArray {
+		  elementMap, ok := elementObj.(map[interface{}] interface{})
+		  if !ok {
+			  continue
+		  }
+		  activeDefaultCollectionsObj, ok := elementMap[ACTIVE_DEFAULT_COLLECTIONS]
+		  if !ok {
+			  continue
+		  }
+		  active, ok := activeDefaultCollectionsObj.(bool)
+		  if !ok {
+			  continue
+		  }
+		  if active {
+			  urlObj, ok := elementMap[URL]
+			  if !ok {
+				  continue
+			  }
+			  url, ok := urlObj.(string)
+			  if !ok {
+				  continue
+			  }
+			  return url, nil
+		  }
+		}
+	}
+	return "", fmt.Errorf("Unable to find collection url in kabanero custom resource for namespace %s", namespace)
 }

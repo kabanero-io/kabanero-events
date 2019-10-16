@@ -1,0 +1,9 @@
+variabbles:
+  - name: name1
+    value: val1
+triggers:
+  - when: cond0
+    action:
+        applyResources:
+            directory: dir1
+  
