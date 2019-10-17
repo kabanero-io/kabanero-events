@@ -17,33 +17,33 @@ limitations under the License.
 package main
 
 import (
-	"fmt"
 	"encoding/base64"
+	"fmt"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/klog"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 /* Kubernetes and Kabanero yaml constants*/
 const (
-	V1 = "v1" 
-	V1ALPHA1 = "v1alpha1"
-	KABANEROIO = "kabanero.io"
-	KABANERO = "kabanero"
-	KABANEROS = "kabaneros"
-	DATA = "data"
-    URL = "url"
-	USERNAME = "username"
-	TOKEN = "token"
-	SECRETS = "secrets"
-	SPEC = "spec"
-	COLLECTIONS = "collections"
-	REPOSITORIES = "repositories"
-	ACTIVATEDEFAULTCOLLECTIONS = "activateDefaultCollections" 
+	V1                         = "v1"
+	V1ALPHA1                   = "v1alpha1"
+	KABANEROIO                 = "kabanero.io"
+	KABANERO                   = "kabanero"
+	KABANEROS                  = "kabaneros"
+	DATA                       = "data"
+	URL                        = "url"
+	USERNAME                   = "username"
+	TOKEN                      = "token"
+	SECRETS                    = "secrets"
+	SPEC                       = "spec"
+	COLLECTIONS                = "collections"
+	REPOSITORIES               = "repositories"
+	ACTIVATEDEFAULTCOLLECTIONS = "activateDefaultCollections"
 )
 
 /*
@@ -60,10 +60,10 @@ const (
 	  token: base64 encoded token
 
  If the url in the secret is a prefix of repoURL, and username and token are defined, then return the user and token.
- Return user, token, error. 
+ Return user, token, error.
  TODO: Change to controller pattern and cache the secrets.
- */
-func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, error){
+*/
+func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, error) {
 	gvr := schema.GroupVersionResource{
 		Group:    "",
 		Version:  V1,
@@ -82,15 +82,15 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 	}
 
 	for _, unstructuredObj := range unstructuredList.Items {
-	    var objMap = unstructuredObj.Object
+		var objMap = unstructuredObj.Object
 		dataMapObj, ok := objMap[DATA]
 		if !ok {
 			continue
 		}
 
-    	dataMap, ok := dataMapObj.(map[string]interface{})
-    	if !ok {
-    		continue
+		dataMap, ok := dataMapObj.(map[string]interface{})
+		if !ok {
+			continue
 		}
 
 		urlObj, ok := dataMap[URL]
@@ -103,8 +103,8 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 		}
 
 		if !strings.HasPrefix(repoURL, url) {
-            /* not for this uRL */
-            continue
+			/* not for this uRL */
+			continue
 		}
 
 		usernameObj, ok := dataMap[USERNAME]
@@ -140,12 +140,12 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 }
 
 /* Get the URL to kabanero-index.yaml
-*/
-func getKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string, error){
-        if klog.V(5) {
-            klog.Infof("Entering getKabaneroIndexURL")
-            defer klog.Infof("Leaving getKabaneroIndexURL")
-        }
+ */
+func getKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string, error) {
+	if klog.V(5) {
+		klog.Infof("Entering getKabaneroIndexURL")
+		defer klog.Infof("Leaving getKabaneroIndexURL")
+	}
 
 	gvr := schema.GroupVersionResource{
 		Group:    KABANEROIO,
@@ -161,99 +161,99 @@ func getKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string,
 	var err error
 	unstructuredList, err = intf.List(metav1.ListOptions{})
 	if err != nil {
-                klog.Errorf("Unable to list resource of kind kabanero in the namespace %s",namespace) 
+		klog.Errorf("Unable to list resource of kind kabanero in the namespace %s", namespace)
 		return "", err
 	}
 
 	for _, unstructuredObj := range unstructuredList.Items {
-            if klog.V(5) {
-                klog.Infof("Processing kabanero CRD instance: %v", unstructuredObj);
-            }
-	    var objMap = unstructuredObj.Object
+		if klog.V(5) {
+			klog.Infof("Processing kabanero CRD instance: %v", unstructuredObj)
+		}
+		var objMap = unstructuredObj.Object
 		specMapObj, ok := objMap[SPEC]
 		if !ok {
-                    if klog.V(5) {
-                        klog.Infof("    kabanero CRD instance: has no spec section. Skipping");
-                    }
-                    continue
+			if klog.V(5) {
+				klog.Infof("    kabanero CRD instance: has no spec section. Skipping")
+			}
+			continue
 		}
 
-    	specMap, ok := specMapObj.(map[string]interface{})
-    	if !ok {
-                    if klog.V(5) {
-                        klog.Infof("    kabanero CRD instance: spec section is type %T. Skipping", specMapObj);
-                    }
-    		continue
+		specMap, ok := specMapObj.(map[string]interface{})
+		if !ok {
+			if klog.V(5) {
+				klog.Infof("    kabanero CRD instance: spec section is type %T. Skipping", specMapObj)
+			}
+			continue
 		}
 
 		collectionsMapObj, ok := specMap[COLLECTIONS]
 		if !ok {
-                    if klog.V(5) {
-                        klog.Infof("    kabanero CRD instance: spec section has no collections section. Skipping");
-                    }
-                    continue
+			if klog.V(5) {
+				klog.Infof("    kabanero CRD instance: spec section has no collections section. Skipping")
+			}
+			continue
 		}
 		collectionMap, ok := collectionsMapObj.(map[string]interface{})
 		if !ok {
-                    if klog.V(5) {
-                        klog.Infof("    kabanero CRD instance: collections type is %T. Skipping", collectionsMapObj);
-                    }
-                    continue
+			if klog.V(5) {
+				klog.Infof("    kabanero CRD instance: collections type is %T. Skipping", collectionsMapObj)
+			}
+			continue
 		}
 
 		repositoriesInterface, ok := collectionMap[REPOSITORIES]
 		if !ok {
-                    if klog.V(5) {
-                        klog.Infof("    kabanero CRD instance: collections section has no repositories section. Skipping");
-                    }
+			if klog.V(5) {
+				klog.Infof("    kabanero CRD instance: collections section has no repositories section. Skipping")
+			}
 			continue
 		}
-		repositoriesArray, ok :=repositoriesInterface.([]interface{})
+		repositoriesArray, ok := repositoriesInterface.([]interface{})
 		if !ok {
-                    if klog.V(5) {
-                        klog.Infof("    kabanero CRD instance: repositories  type is %T. Skipping", repositoriesInterface);
-                    }
-                    continue
+			if klog.V(5) {
+				klog.Infof("    kabanero CRD instance: repositories  type is %T. Skipping", repositoriesInterface)
+			}
+			continue
 		}
 		for index, elementObj := range repositoriesArray {
-		  elementMap, ok := elementObj.(map[string] interface{})
-		  if !ok {
-                      if klog.V(5) {
-                          klog.Infof("    kabanero CRD instance repositories index %d, types is %T. Skipping", index, elementObj);
-                      }
-                      continue
-		  }
-		  activeDefaultCollectionsObj, ok := elementMap[ACTIVATEDEFAULTCOLLECTIONS]
-		  if !ok {
-                        if klog.V(5) {
-                            klog.Infof("    kabanero CRD instance: index %d, activeDefaultCollection not set. Skipping", index)
-                        }
-			  continue
-		  }
-		  active, ok := activeDefaultCollectionsObj.(bool)
-		  if !ok {
-                      if klog.V(5) {
-                          klog.Infof("    kabanero CRD instance index %d, activeDefaultCollection, types is %T. Skipping", activeDefaultCollectionsObj);
-                      }
-			  continue
-		  }
-		  if active {
-			  urlObj, ok := elementMap[URL]
-			  if !ok {
-                              if klog.V(5) {
-                                  klog.Infof("    kabanero CRD instance: index %d, url set. Skipping", index)
-                              }
-                              continue
-			  }
-			  url, ok := urlObj.(string)
-			  if !ok {
-                              if klog.V(5) {
-                                  klog.Infof("    kabanero CRD instance index %d, url type is %T. Skipping", url);
-                              }
-                              continue
-			  }
-			  return url, nil
-		  }
+			elementMap, ok := elementObj.(map[string]interface{})
+			if !ok {
+				if klog.V(5) {
+					klog.Infof("    kabanero CRD instance repositories index %d, types is %T. Skipping", index, elementObj)
+				}
+				continue
+			}
+			activeDefaultCollectionsObj, ok := elementMap[ACTIVATEDEFAULTCOLLECTIONS]
+			if !ok {
+				if klog.V(5) {
+					klog.Infof("    kabanero CRD instance: index %d, activeDefaultCollection not set. Skipping", index)
+				}
+				continue
+			}
+			active, ok := activeDefaultCollectionsObj.(bool)
+			if !ok {
+				if klog.V(5) {
+					klog.Infof("    kabanero CRD instance index %d, activeDefaultCollection, types is %T. Skipping", index, activeDefaultCollectionsObj)
+				}
+				continue
+			}
+			if active {
+				urlObj, ok := elementMap[URL]
+				if !ok {
+					if klog.V(5) {
+						klog.Infof("    kabanero CRD instance: index %d, url set. Skipping", index)
+					}
+					continue
+				}
+				url, ok := urlObj.(string)
+				if !ok {
+					if klog.V(5) {
+						klog.Infof("    kabanero CRD instance index %d, url type is %T. Skipping", index, url)
+					}
+					continue
+				}
+				return url, nil
+			}
 		}
 	}
 	return "", fmt.Errorf("Unable to find collection url in kabanero custom resource for namespace %s", namespace)

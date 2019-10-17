@@ -24,18 +24,19 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
-
+	"time"
 	"gopkg.in/yaml.v2"
+	"sync"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types/ref"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"k8s.io/klog"
-	"k8s.io/client-go/dynamic"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
- 	 metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/klog"
 )
 
 /* constants for parsing */
@@ -45,7 +46,8 @@ const (
 	KIND       = "kind"
 	NAME       = "name"
 	NAMESPACE  = "namespace"
-	EVENT = "event"
+	EVENT      = "event"
+        JOBID      = "jobid"
 	TYPEINT    = "int"
 	TYPEDOUBLE = "double"
 	TYPEBOOL   = "bool"
@@ -54,12 +56,12 @@ const (
 	TYPEMAP    = "map"
 )
 
-/* 
+/*
 Variable as used in trigger
 */
 type Variable struct {
-	Name      string       `yaml:"name"`
-	Value     string       `yaml:"value"`
+	Name  string `yaml:"name"`
+	Value string `yaml:"value"`
 }
 
 /*
@@ -76,27 +78,26 @@ type Action struct {
 	ApplyResources *ApplyResource `yaml:"applyResources"`
 }
 
-/* 
+/*
 Trigger as used in the trigger file
 */
 type Trigger struct {
 	When     string     `yaml:"when"`
-	Action   *Action     `yaml:"action,omitempty"`
+	Action   *Action    `yaml:"action,omitempty"`
 	Triggers []*Trigger `yaml:"triggers,omitempty"`
 }
-
 
 /*
 TriggerDefinition as used in the trigger file
 */
 type TriggerDefinition struct {
-	Variables  []*Variable `yaml:"variables,omitempty"`
-	Triggers   []*Trigger   `yaml:"triggers,omitempty"`
+	Variables []*Variable `yaml:"variables,omitempty"`
+	Triggers  []*Trigger  `yaml:"triggers,omitempty"`
 }
 
 type triggerProcessor struct {
 	triggerDef *TriggerDefinition
-	triggerDir string  // directory where trigger file is stored
+	triggerDir string // directory where trigger file is stored
 }
 
 func newTriggerProcessor() *triggerProcessor {
@@ -113,7 +114,6 @@ func (tp *triggerProcessor) initialize(fileName string) error {
 	return nil
 }
 
-
 func (tp *triggerProcessor) processMessage(message map[string]interface{}) error {
 	env, variables, err := initializeCelEnv(tp.triggerDef, message)
 	if err != nil {
@@ -122,51 +122,50 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}) error
 
 	/* Go through the trigger section to find the rule to fire*/
 	action, err := findTrigger(env, tp.triggerDef, variables)
-	if  err != nil {
+	if err != nil {
 		return err
 	}
 
 	/* Fire the rule */
-    if action == nil {
-        /* no action found */
-        klog.Infof("No action found for message %s", message)
-        return nil
-    }
+	if action == nil {
+		/* no action found */
+		klog.Infof("No action found for message %s", message)
+		return nil
+	}
 	directory := action.ApplyResources.Directory
 	if directory == "" {
-        klog.Errorf("action drectory in trigger file is empty" )
-        return fmt.Errorf("action directory in trigger file is empty")
+		klog.Errorf("action drectory in trigger file is empty")
+		return fmt.Errorf("action directory in trigger file is empty")
 	}
 	resourceDir := filepath.Join(tp.triggerDir, directory)
-	
+
 	err = filepath.Walk(resourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-                    // problem with accessing a path
-		    klog.Errorf("problem processing trigger %s, error %s", path, err)
+			// problem with accessing a path
+			klog.Errorf("problem processing trigger %s, error %s", path, err)
 			return err
 		}
 		if info.IsDir() {
-                   // don't process directory
-		   klog.Infof("Skipping processing rerectory %s", path)
+			// don't process directory
+			klog.Infof("Skipping processing rerectory %s", path)
 			return nil
 		}
 		if strings.HasSuffix(info.Name(), ".yaml") || strings.HasSuffix(info.Name(), ".yml") {
-			 substituted, err := substituteTemplateFile(path, variables) 
-			 if err != nil {
-				 return err
-			 }
-			 /* Apply the file */
-			 klog.Infof("applying resource: %s", substituted)
-			 err = createResource(substituted, dynamicClient)
-             if err != nil {
-                 return err
-             }
+			substituted, err := substituteTemplateFile(path, variables)
+			if err != nil {
+				return err
+			}
+			/* Apply the file */
+			klog.Infof("applying resource: %s", substituted)
+			err = createResource(substituted, dynamicClient)
+			if err != nil {
+				return err
+			}
 		} else {
-		   klog.Infof("Skipping processing file %s", path)
+			klog.Infof("Skipping processing file %s", path)
 		}
 		return nil
 	})
-
 
 	return nil
 }
@@ -191,7 +190,14 @@ func initializeCelEnv(td *TriggerDefinition, message map[string]interface{}) (ce
 		return nil, nil, err
 	}
 
-	/* Create a new environment with event as a built-in variable*/
+	/* Create a new environment with event and jobid as a built-in variable*/
+	jobIDIdent := decls.NewIdent(JOBID, decls.String, nil)
+	env, err = env.Extend(cel.Declarations(jobIDIdent))
+	if err != nil {
+		return nil, nil, err
+	}
+	variables[JOBID] = getTimestamp()
+
 	eventIdent := decls.NewIdent(EVENT, decls.NewMapType(decls.String, decls.Any), nil)
 	env, err = env.Extend(cel.Declarations(eventIdent))
 	if err != nil {
@@ -311,13 +317,12 @@ func readTriggerDefinition(fileName string) (*TriggerDefinition, error) {
 	return &t, err
 }
 
-
 /* Find Action for trigger. Only return the first one found*/
 func findTrigger(env cel.Env, td *TriggerDefinition, variables map[string]interface{}) (*Action, error) {
 	if td.Triggers == nil {
 		return nil, nil
 	}
-	for _, trigger := range(td.Triggers) {
+	for _, trigger := range td.Triggers {
 		action, err := evalTrigger(env, trigger, variables)
 		if action != nil || err != nil {
 			// either found a match or error
@@ -328,54 +333,54 @@ func findTrigger(env cel.Env, td *TriggerDefinition, variables map[string]interf
 }
 
 func evalTrigger(env cel.Env, trigger *Trigger, variables map[string]interface{}) (*Action, error) {
-	    if trigger == nil {
+	if trigger == nil {
+		return nil, nil
+	}
+
+	parsed, issues := env.Parse(trigger.When)
+	if issues != nil && issues.Err() != nil {
+		return nil, issues.Err()
+	}
+	checked, issues := env.Check(parsed)
+	if issues != nil && issues.Err() != nil {
+		return nil, issues.Err()
+	}
+	prg, err := env.Program(checked)
+	if err != nil {
+		return nil, err
+	}
+	// out, details, err := prg.Eval(variables)
+	out, _, err := prg.Eval(variables)
+	if err != nil {
+		return nil, err
+	}
+
+	var boolVal bool
+	var ok bool
+	if boolVal, ok = out.Value().(bool); !ok {
+		return nil, fmt.Errorf("The When expression %s does not evaluate to a bool. Instead it is of type %T", trigger.When, out.Value())
+	}
+	if boolVal {
+		/* trigger matched */
+		klog.Infof("Trigger %s matched", trigger.When)
+		if trigger.Action != nil {
+			return trigger.Action, nil
+		}
+
+		/* no action. Check children to see if they match */
+		if trigger.Triggers == nil {
 			return nil, nil
 		}
 
-		parsed, issues := env.Parse(trigger.When)
-		if issues != nil && issues.Err() != nil {
-			return nil, issues.Err()
-		}
-		checked, issues := env.Check(parsed)
-		if issues != nil && issues.Err() != nil {
-			return nil, issues.Err()
-		}
-		prg, err := env.Program(checked)
-		if err != nil {
-			return nil,  err
-		}
-		// out, details, err := prg.Eval(variables)
-		out, _, err := prg.Eval(variables)
-		if err != nil {
-			return nil, err
-		}
-
-		var boolVal bool
-		var ok bool
-	    if boolVal, ok = out.Value().(bool); !ok {
-            return nil, fmt.Errorf("The When expression %s does not evaluate to a bool. Instead it is of type %T", trigger.When, out.Value())
-		}
-		if boolVal {
-			/* trigger matched */
-			klog.Infof("Trigger %s matched", trigger.When)
-			if  trigger.Action != nil {
-			    return trigger.Action, nil
+		for _, trigger := range trigger.Triggers {
+			action, err := evalTrigger(env, trigger, variables)
+			if action != nil || err != nil {
+				// either found a match or error
+				return action, err
 			}
-
-            /* no action. Check children to see if they match */
-  		    if trigger.Triggers == nil {
-			    return nil, nil
-		    }
-
-  	        for _, trigger := range(trigger.Triggers) {
-		        action, err := evalTrigger(env, trigger, variables)
-		        if action != nil || err != nil {
-			        // either found a match or error
-			        return action,     err
-			    }
-		    }
 		}
-		return nil, nil
+	}
+	return nil, nil
 }
 
 func substituteTemplateFile(fileName string, variables map[string]interface{}) (string, error) {
@@ -386,10 +391,10 @@ func substituteTemplateFile(fileName string, variables map[string]interface{}) (
 	str := string(bytes)
 	klog.Infof("Before template substitution for %s: %s", fileName, str)
 	substituted, err := substituteTemplate(str, variables)
-	if (err != nil) {
-        klog.Errorf("Error in template substitution for %s: %s", fileName, err)
+	if err != nil {
+		klog.Errorf("Error in template substitution for %s: %s", fileName, err)
 	} else {
-	    klog.Infof("After template substitution for %s: %s", fileName,substituted) 
+		klog.Infof("After template substitution for %s: %s", fileName, substituted)
 	}
 	return substituted, err
 }
@@ -407,13 +412,12 @@ func substituteTemplate(templateStr string, variables map[string]interface{}) (s
 	return buffer.String(), nil
 }
 
-
 /* Create application. Assume it does not already exist */
 func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
 	if klog.V(4) {
 		klog.Infof("Creating resource %s", resourceStr)
 	}
-    var unstructuredObj = &unstructured.Unstructured{}
+	var unstructuredObj = &unstructured.Unstructured{}
 	err := unstructuredObj.UnmarshalJSON([]byte(resourceStr))
 	if err != nil {
 		klog.Errorf("Unable to convert JSON %s to unstructured", resourceStr)
@@ -424,19 +428,19 @@ func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
 	if namespace == "" {
 		return fmt.Errorf("resource %s does not contain namepsace", resourceStr)
 	}
-	gvr := schema.GroupVersionResource  { group, version, resource}
+	gvr := schema.GroupVersionResource{group, version, resource}
 	if err == nil {
 		var intfNoNS = dynamicClient.Resource(gvr)
 		var intf dynamic.ResourceInterface
-        intf = intfNoNS.Namespace(namespace)
+		intf = intfNoNS.Namespace(namespace)
 
 		_, err = intf.Create(unstructuredObj, metav1.CreateOptions{})
 		if err != nil {
-			klog.Errorf("Unable to create resource %s/%s error: %s", namespace, name , err)
+			klog.Errorf("Unable to create resource %s/%s error: %s", namespace, name, err)
 			return err
 		}
 	} else {
-		klog.Errorf("Unable to create resource /%s.  Error: %s",  resourceStr, err)
+		klog.Errorf("Unable to create resource /%s.  Error: %s", resourceStr, err)
 		return fmt.Errorf("Unable to get GVR for resource %s, error: %s", resourceStr, err)
 	}
 	if klog.V(2) {
@@ -459,10 +463,10 @@ func getGroupVersionResourceNamespaceName(unstructuredObj *unstructured.Unstruct
 
 	components := strings.Split(apiVersion, "/")
 	var group, version string
-	if len(components) == 1{
+	if len(components) == 1 {
 		group = ""
 		version = components[0]
-	} else if len(components) == 2{
+	} else if len(components) == 2 {
 		group = components[0]
 		version = components[1]
 	} else {
@@ -470,7 +474,7 @@ func getGroupVersionResourceNamespaceName(unstructuredObj *unstructured.Unstruct
 	}
 
 	kindObj, ok := objMap[KIND]
-	if ! ok {
+	if !ok {
 		return "", "", "", "", "", fmt.Errorf("Resource has invalid kind: %s", unstructuredObj)
 	}
 	kind, ok := kindObj.(string)
@@ -483,14 +487,14 @@ func getGroupVersionResourceNamespaceName(unstructuredObj *unstructured.Unstruct
 	var metadata map[string]interface{}
 	if !ok {
 		return "", "", "", "", "", fmt.Errorf("Resource has no metadata: %s", unstructuredObj)
-	} 
+	}
 	metadata, ok = metadataObj.(map[string]interface{})
 	if !ok {
 		return "", "", "", "", "", fmt.Errorf("Resource metadata is not a map: %s", unstructuredObj)
 	}
 
 	nameObj, ok := metadata[NAME]
-    if !ok {
+	if !ok {
 		return "", "", "", "", "", fmt.Errorf("Resource has no name: %s", unstructuredObj)
 	}
 	name, ok := nameObj.(string)
@@ -501,21 +505,44 @@ func getGroupVersionResourceNamespaceName(unstructuredObj *unstructured.Unstruct
 	nsObj, ok := metadata[NAMESPACE]
 	if !ok {
 		return "", "", "", "", "", fmt.Errorf("Resource has no namespace: %s", unstructuredObj)
-	} 
+	}
 	namespace, ok := nsObj.(string)
 	if !ok {
 		return "", "", "", "", "", fmt.Errorf("Resource namespace not a string: %s", unstructuredObj)
 	}
-    return group, version, resource, namespace, name, nil
+	return group, version, resource, namespace, name, nil
 }
 
 func kindToPlural(kind string) string {
 	lowerKind := strings.ToLower(kind)
 	if index := strings.LastIndex(lowerKind, "ss"); index == len(lowerKind)-2 {
-			return lowerKind + "es"
+		return lowerKind + "es"
 	}
 	if index := strings.LastIndex(lowerKind, "cy"); index == len(lowerKind)-2 {
-			return lowerKind[0:index] + "cies"
+		return lowerKind[0:index] + "cies"
 	}
 	return lowerKind + "s"
+}
+
+/* tracking time for timestamp */
+var lastTime time.Time = time.Now().UTC()
+var mutex = &sync.Mutex{}
+/* 
+Get timestamp. Timestamp format is UTC time expressed as:
+      YYYYMMDDHHMMSSL, where L is last digits in multiples of 1/10 second.
+WARNING: This function may sleep up to 0.1 second per request if there are too many concurent requests
+*/
+func getTimestamp() string {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	now := time.Now().UTC()
+	for now.Sub(lastTime).Nanoseconds() < 100000000 {
+            // < 0.1 since last time. Sleep for at least 0.1 second
+            time.Sleep(time.Millisecond*time.Duration(100))
+            now = time.Now().UTC()
+	}
+	lastTime = now
+
+	return fmt.Sprintf("%04d%02d%02d%02d%02d%02d%01d", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(),now.Second(), now.Nanosecond()/100000000)
 }

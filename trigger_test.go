@@ -135,8 +135,7 @@ func TestGoTemplate(t *testing.T) {
 	}
 }
 
-var testTemplate string =
-`
+var testTemplate string = `
 ----- Event Variables ----
 {{.event.stringAttr}}
 {{.event.floatAttr}}
@@ -184,8 +183,7 @@ var testTemplate string =
 {{.reuseIfThenElseStringAttr}}
 `
 
-var result string =
-`
+var result string = `
 ----- Event Variables ----
 string1
 1.2
@@ -233,7 +231,6 @@ map[innerFloatAttr:1.2 innerStringAttr:inner string]
 got-string-1
 `
 
-
 /* Test applying template using CEL variables */
 func TestApplyTemplateWithCELVariables(t *testing.T) {
 	srcEvent := []byte(`{"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} } `)
@@ -253,21 +250,21 @@ func TestApplyTemplateWithCELVariables(t *testing.T) {
 	}
 
 	afterSubstitution, err2 := substituteTemplate(testTemplate, variables)
-    if err2 != nil {
-         t.Fatal(err2)
+	if err2 != nil {
+		t.Fatal(err2)
 	}
 	fmt.Printf("after substitution: %s\n", afterSubstitution)
 
 	if result != afterSubstitution {
-        t.Fatal("template substitution is not as expected.")
+		t.Fatal("template substitution is not as expected.")
 	}
 }
 
 func TestFindTrigger(t *testing.T) {
-	srcEvents := [][]byte {
-	    []byte(`{"attr1": "string1", "attr2": "string2"}`),
-	    []byte(`{"attr1": "string1a", "attr2": "string2"}`),
-	    []byte(`{"attr1": "string1", "attr2": "string2a"}`),
+	srcEvents := [][]byte{
+		[]byte(`{"attr1": "string1", "attr2": "string2"}`),
+		[]byte(`{"attr1": "string1a", "attr2": "string2"}`),
+		[]byte(`{"attr1": "string1", "attr2": "string2a"}`),
 		[]byte(`{"attr1": "string1a", "attr2": "string2a"}`),
 	}
 
@@ -276,18 +273,18 @@ func TestFindTrigger(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expectedDirs := []string {
-		    "string1string2", "notstring1string2", "string1notstring2", "notstring1notstring2",
+	expectedDirs := []string{
+		"string1string2", "notstring1string2", "string1notstring2", "notstring1notstring2",
 	}
 
-	for index, srcBytes := range srcEvents{
+	for index, srcBytes := range srcEvents {
 		if err = testEvent(triggerDef, srcBytes, expectedDirs[index]); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-func testEvent( triggerDef *TriggerDefinition, srcEvent []byte, expectedDirectory string) error {
+func testEvent(triggerDef *TriggerDefinition, srcEvent []byte, expectedDirectory string) error {
 	var event map[string]interface{}
 	err := json.Unmarshal(srcEvent, &event)
 	if err != nil {
@@ -297,12 +294,25 @@ func testEvent( triggerDef *TriggerDefinition, srcEvent []byte, expectedDirector
 	if err != nil {
 		return err
 	}
-    action, err := findTrigger(env, triggerDef, variables);
+	action, err := findTrigger(env, triggerDef, variables)
 	if err != nil {
-        return err
+		return err
 	}
-    if action.ApplyResources.Directory != expectedDirectory {
-        return fmt.Errorf("Expecting directory %s but got %s", expectedDirectory, action.ApplyResources.Directory)
-	} 
+	if action.ApplyResources.Directory != expectedDirectory {
+		return fmt.Errorf("Expecting directory %s but got %s", expectedDirectory, action.ApplyResources.Directory)
+	}
 	return nil
+}
+
+func TestTimestamp(t *testing.T) {
+	next := ""	
+	last := getTimestamp()
+	for i:=0; i < 20; i++{
+		next = getTimestamp()
+		if next == last {
+			t.Errorf("Some consecutive timestamps have the same value: %s %s", next, last)
+		}
+		last = next
+	}
+	fmt.Printf("Last timestamp is : %s\n", last)
 }
