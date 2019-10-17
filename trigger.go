@@ -38,37 +38,47 @@ import (
  	 metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+/* constants for parsing */
 const (
 	METADATA   = "metadata"
 	APIVERSION = "apiVersion"
 	KIND       = "kind"
 	NAME       = "name"
 	NAMESPACE  = "namespace"
-
 	EVENT = "event"
-
-	/* type names */
-	TYPE_INT    = "int"
-	TYPE_DOUBLE = "double"
-	TYPE_BOOL   = "bool"
-	TYPE_STRING = "string"
-	TYPE_LIST   = "list"
-	TYPE_MAP    = "map"
+	TYPEINT    = "int"
+	TYPEDOUBLE = "double"
+	TYPEBOOL   = "bool"
+	TYPESTRING = "string"
+	TYPELIST   = "list"
+	TYPEMAP    = "map"
 )
 
+/* 
+Variable as used in trigger
+*/
 type Variable struct {
 	Name      string       `yaml:"name"`
 	Value     string       `yaml:"value"`
 }
 
+/*
+ApplyResource as used in the trigger file
+*/
 type ApplyResource struct {
 	Directory string `yaml:"directory"`
 }
 
+/*
+Action as used in the trigger file
+*/
 type Action struct {
 	ApplyResources *ApplyResource `yaml:"applyResources"`
 }
 
+/* 
+Trigger as used in the trigger file
+*/
 type Trigger struct {
 	When     string     `yaml:"when"`
 	Action   *Action     `yaml:"action,omitempty"`
@@ -76,6 +86,9 @@ type Trigger struct {
 }
 
 
+/*
+TriggerDefinition as used in the trigger file
+*/
 type TriggerDefinition struct {
 	Variables  []*Variable `yaml:"variables,omitempty"`
 	Triggers   []*Trigger   `yaml:"triggers,omitempty"`
@@ -143,10 +156,11 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}) error
 				 return err
 			 }
 			 /* Apply the file */
+			 klog.Infof("applying resource: %s", substituted)
 			 err = createResource(substituted, dynamicClient)
-                         if err != nil {
-                             return err
-                         }
+             if err != nil {
+                 return err
+             }
 		} else {
 		   klog.Infof("Skipping processing file %s", path)
 		}
@@ -218,7 +232,7 @@ func initializeCelEnv(td *TriggerDefinition, message map[string]interface{}) (ce
 
 		var ok bool
 		switch out.Type().TypeName() {
-		case TYPE_INT:
+		case TYPEINT:
 			ident := decls.NewIdent(nameVal.Name, decls.Double, nil)
 			env, err = env.Extend(cel.Declarations(ident))
 			if err != nil {
@@ -229,7 +243,7 @@ func initializeCelEnv(td *TriggerDefinition, message map[string]interface{}) (ce
 				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into int64", nameVal.Name, nameVal.Value)
 			}
 			variables[nameVal.Name] = float64(intval)
-		case TYPE_BOOL:
+		case TYPEBOOL:
 			ident := decls.NewIdent(nameVal.Name, decls.Bool, nil)
 			env, err = env.Extend(cel.Declarations(ident))
 			if err != nil {
@@ -238,7 +252,7 @@ func initializeCelEnv(td *TriggerDefinition, message map[string]interface{}) (ce
 			if variables[nameVal.Name], ok = out.Value().(bool); !ok {
 				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into bool", nameVal.Name, nameVal.Value)
 			}
-		case TYPE_DOUBLE:
+		case TYPEDOUBLE:
 			ident := decls.NewIdent(nameVal.Name, decls.Double, nil)
 			env, err = env.Extend(cel.Declarations(ident))
 			if err != nil {
@@ -247,7 +261,7 @@ func initializeCelEnv(td *TriggerDefinition, message map[string]interface{}) (ce
 			if variables[nameVal.Name], ok = out.Value().(float64); !ok {
 				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into float64", nameVal.Name, nameVal.Value)
 			}
-		case TYPE_STRING:
+		case TYPESTRING:
 			ident := decls.NewIdent(nameVal.Name, decls.String, nil)
 			env, err = env.Extend(cel.Declarations(ident))
 			if err != nil {
@@ -256,7 +270,7 @@ func initializeCelEnv(td *TriggerDefinition, message map[string]interface{}) (ce
 			if variables[nameVal.Name], ok = out.Value().(string); !ok {
 				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into string", nameVal.Name, nameVal.Value)
 			}
-		case TYPE_LIST:
+		case TYPELIST:
 			ident := decls.NewIdent(nameVal.Name, decls.NewListType(decls.Any), nil)
 			env, err = env.Extend(cel.Declarations(ident))
 			if err != nil {
@@ -270,7 +284,7 @@ func initializeCelEnv(td *TriggerDefinition, message map[string]interface{}) (ce
 			default:
 				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into %T", nameVal.Name, nameVal.Value, out.Value())
 			}
-		case TYPE_MAP:
+		case TYPEMAP:
 			ident := decls.NewIdent(nameVal.Name, decls.NewMapType(decls.String, decls.Any), nil)
 			env, err = env.Extend(cel.Declarations(ident))
 			if err != nil {
