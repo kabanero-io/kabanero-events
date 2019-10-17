@@ -212,9 +212,16 @@ func gUnzipUnTar(readCloser io.ReadCloser, dir string)  error {
  dir: directory to unpack the trigger.tar.gz
 */
 func downloadTrigger(kabaneroIndexURL string, dir string ) error {
+   if klog.V(5) {
+       klog.Infof("Entering downloadTrigger kabaneroIndexURL: %s, directory to store trigger: %s", kabaneroIndexURL, dir)
+       defer klog.Infof("Leaving downloadTrigger kabaneroIndexURL: %s, directory to store trigger: %s", kabaneroIndexURL, dir)
+   }
    kabaneroIndexBytes, err :=  readHTTPURL(kabaneroIndexURL) 
    if err != nil {
 	   return err
+   }
+   if klog.V(5) {
+       klog.Infof("Retrieved kabanero index file: %s", string(kabaneroIndexBytes))
    }
    kabaneroIndexMap, err := unmarshallKabaneroIndex(kabaneroIndexBytes)
    if err != nil {
