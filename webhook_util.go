@@ -32,6 +32,7 @@ import (
 	"compress/gzip"
 )
 
+/* constants*/
 const (
 	TRIGGERS = "triggers"
 )
@@ -64,7 +65,7 @@ func readJSON(fileName string) (*unstructured.Unstructured, error) {
 	return unstructuredObj, nil
 }
 
-func getHttpURLReaderCloser(url string) (io.ReadCloser, error) {
+func getHTTPURLReaderCloser(url string) (io.ReadCloser, error) {
 
 	client := http.Client{}
 	response, err := client.Get(url)
@@ -74,14 +75,13 @@ func getHttpURLReaderCloser(url string) (io.ReadCloser, error) {
 
 	if response.StatusCode == http.StatusOK {
 	    return response.Body, nil
-	} else {
-         return nil, fmt.Errorf("Unable to read from url %s, http status: %s", url, response.Status)
-	}
+	} 
+    return nil, fmt.Errorf("Unable to read from url %s, http status: %s", url, response.Status)
 }
 
 /* Read remote file from URL and return bytes */
-func readHttpURL(url string) ([]byte, error) {
-	readCloser, err := getHttpURLReaderCloser(url) 
+func readHTTPURL(url string) ([]byte, error) {
+	readCloser, err := getHTTPURLReaderCloser(url) 
 	if err != nil {
 		return nil, err
 	}
@@ -95,9 +95,8 @@ func unmarshallKabaneroIndex(bytes []byte) (map[string]interface{}, error) {
 	err := yaml.Unmarshal(bytes, &myMap)
 	if err != nil {
 		return nil, err
-	} else  {
-		return myMap, nil
-	}
+	} 
+	return myMap, nil
 }
 
 /* Get the URL of where the trigger is stored*/
@@ -110,7 +109,7 @@ func getTriggerURL(collection map[string]interface{}) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("collection does not contain triggers section is not an Arry")
 	}
-	var retUrl = ""
+	var retURL = ""
 	for index, arrayElement := range triggersArray {
 		mapObj, ok := arrayElement.(map[interface{}]interface{})
 		if !ok {
@@ -124,13 +123,13 @@ func getTriggerURL(collection map[string]interface{}) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("triggers section at index %d url is not a string: %s",index, url)
 		}
-		retUrl = url
+		retURL = url
 	}
 
-	if retUrl == "" {
+	if retURL == "" {
         return "", fmt.Errorf("Unable to find url from triggers section")
 	}
-	return retUrl, nil
+	return retURL, nil
 }
 
 
@@ -212,8 +211,8 @@ func gUnzipUnTar(readCloser io.ReadCloser, dir string)  error {
  kabaneroIndexUrl: URL that serves kabanero-index.yaml
  dir: directory to unpack the trigger.tar.gz
 */
-func downloadTrigger(kabaneroIndexUrl string, dir string ) error {
-   kabaneroIndexBytes, err :=  readHttpURL(kabaneroIndexUrl) 
+func downloadTrigger(kabaneroIndexURL string, dir string ) error {
+   kabaneroIndexBytes, err :=  readHTTPURL(kabaneroIndexURL) 
    if err != nil {
 	   return err
    }
@@ -221,11 +220,11 @@ func downloadTrigger(kabaneroIndexUrl string, dir string ) error {
    if err != nil {
 	   return err
    }
-   triggerUrl, err := getTriggerURL(kabaneroIndexMap) 
+   triggerURL, err := getTriggerURL(kabaneroIndexMap) 
    if err != nil {
 	   return err
    }
-   triggerReadCloser , err := getHttpURLReaderCloser(triggerUrl )
+   triggerReadCloser , err := getHTTPURLReaderCloser(triggerURL )
    if err != nil {
 	   return err
    }

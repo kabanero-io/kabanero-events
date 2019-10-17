@@ -104,9 +104,9 @@ func TestCEL(t *testing.T) {
 /* This is an experiment to unmarshal JSON and check the types of objects */
 func TestJSON(t *testing.T) {
 
-	src_json := []byte(`{"float": 1.2, "int": 1, "bool": true,  "array":["apple", 2]}`)
+	srcJSON := []byte(`{"float": 1.2, "int": 1, "bool": true,  "array":["apple", 2]}`)
 	var m map[string]interface{}
-	err := json.Unmarshal(src_json, &m)
+	err := json.Unmarshal(srcJSON, &m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,16 +115,16 @@ func TestJSON(t *testing.T) {
 
 /* Test applying template using map[string]interface{}*/
 func TestGoTemplate(t *testing.T) {
-	src_json := []byte(`{"floatAttr": 1.2, "intAttr": 1, "boolAttr": true,  "arrayAttr":["apple", "orange"] }`)
+	srcJSON := []byte(`{"floatAttr": 1.2, "intAttr": 1, "boolAttr": true,  "arrayAttr":["apple", "orange"] }`)
 	var variables map[string]interface{}
-	err := json.Unmarshal(src_json, &variables)
+	err := json.Unmarshal(srcJSON, &variables)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	src_template := `attr1: {{.floatAttr}}; attr2: {{.intAttr}}; attr3: {{.boolAttr}};  attr4: {{.arrayAttr}}  attr4[0]: {{index .arrayAttr 0}}`
+	srcTemplate := `attr1: {{.floatAttr}}; attr2: {{.intAttr}}; attr3: {{.boolAttr}};  attr4: {{.arrayAttr}}  attr4[0]: {{index .arrayAttr 0}}`
 	var temp *template.Template
-	temp, err = template.New("TestTemplate").Parse(src_template)
+	temp, err = template.New("TestTemplate").Parse(srcTemplate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,9 +236,9 @@ got-string-1
 
 /* Test applying template using CEL variables */
 func TestApplyTemplateWithCELVariables(t *testing.T) {
-	src_event := []byte(`{"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} } `)
+	srcEvent := []byte(`{"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} } `)
 	var event map[string]interface{}
-	err := json.Unmarshal(src_event, &event)
+	err := json.Unmarshal(srcEvent, &event)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestApplyTemplateWithCELVariables(t *testing.T) {
 }
 
 func TestFindTrigger(t *testing.T) {
-	src_events := [][]byte {
+	srcEvents := [][]byte {
 	    []byte(`{"attr1": "string1", "attr2": "string2"}`),
 	    []byte(`{"attr1": "string1a", "attr2": "string2"}`),
 	    []byte(`{"attr1": "string1", "attr2": "string2a"}`),
@@ -280,16 +280,16 @@ func TestFindTrigger(t *testing.T) {
 		    "string1string2", "notstring1string2", "string1notstring2", "notstring1notstring2",
 	}
 
-	for index, src_bytes := range src_events{
-		if err = testEvent(triggerDef, src_bytes, expectedDirs[index]); err != nil {
+	for index, srcBytes := range srcEvents{
+		if err = testEvent(triggerDef, srcBytes, expectedDirs[index]); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-func testEvent( triggerDef *TriggerDefinition, src_event []byte, expectedDirectory string) error {
+func testEvent( triggerDef *TriggerDefinition, srcEvent []byte, expectedDirectory string) error {
 	var event map[string]interface{}
-	err := json.Unmarshal(src_event, &event)
+	err := json.Unmarshal(srcEvent, &event)
 	if err != nil {
 		return err
 	}

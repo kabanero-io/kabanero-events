@@ -41,11 +41,12 @@ import (
 	ghw "gopkg.in/go-playground/webhooks.v3/github"
 )
 
+/* useful constants */
 const (
 	kubeAPIURL = "http://localhost:9080"
-	DEFAULT_NAMESPACE = "kabanero"
-	KUBE_NAMESPACE = "KUBE_NAMESPACE"
-	KABANERO_INDEX_URL= "KABANERO_INDEX_URL" // use the given URL to fetch kabaneroindex.yaml
+	DEFAULTNAMESPACE = "kabanero"
+	KUBENAMESPACE = "KUBE_NAMESPACE"
+	KABANEROINDEXURL= "KABANERO_INDEX_URL" // use the given URL to fetch kabaneroindex.yaml
 )
 
 
@@ -57,7 +58,7 @@ var (
 	kubeClient *kubernetes.Clientset
 	discClient  *discovery.DiscoveryClient
 	dynamicClient dynamic.Interface
-	webhook_namespace string
+	webhookNamespace string
 	triggerProc *triggerProcessor
 )
 
@@ -111,20 +112,20 @@ func main() {
 	klog.Infof("Received discClient %T, dynamicClient  %T\n", discClient, dynamicClient)
 
 	/* Get namespace of where we are installed */
-	webhook_namespace = os.Getenv(KUBE_NAMESPACE)
-    if webhook_namespace == "" {
-            webhook_namespace = DEFAULT_NAMESPACE
+	webhookNamespace = os.Getenv(KUBENAMESPACE)
+    if webhookNamespace == "" {
+            webhookNamespace = DEFAULTNAMESPACE
 	}
 
-	kabanero_index_url := os.Getenv(KABANERO_INDEX_URL) 
-	if kabanero_index_url == "" {
+	kabaneroIndexURL := os.Getenv(KABANEROINDEXURL) 
+	if kabaneroIndexURL == "" {
 		// not overriden, use the one in the kabanero CRD
-		kabanero_index_url, err = getKabaneroIndexURL(dynamicClient, webhook_namespace )
+		kabaneroIndexURL, err = getKabaneroIndexURL(dynamicClient, webhookNamespace )
 		if err != nil {
 			klog.Fatal(fmt.Errorf("Unable to get kabanero index URL from kabanero CRD. Error: %s", err))
 		}
 	} else {
-        klog.Infof("Using value of KABANERO_INDEX_URL environment variable to fetch kabanero index from: %s", kabanero_index_url)
+        klog.Infof("Using value of KABANERO_INDEX_URL environment variable to fetch kabanero index from: %s", kabaneroIndexURL)
 	}
 
 	/* Download the trigger into temp directory */
@@ -134,9 +135,9 @@ func main() {
 	}
 	defer os.RemoveAll(dir)
 
-	err = downloadTrigger( kabanero_index_url, dir ) 
+	err = downloadTrigger( kabaneroIndexURL, dir ) 
 	if err != nil {
-		klog.Fatal(fmt.Errorf("Unable to download trigger pointed by kabanero_index_url at: %s, error: %s", kabanero_index_url, err))
+		klog.Fatal(fmt.Errorf("Unable to download trigger pointed by kabanero_index_url at: %s, error: %s", kabaneroIndexURL, err))
 	}
 
 	triggerFileName := filepath.Join(dir, "trigger.yaml")

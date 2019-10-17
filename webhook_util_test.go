@@ -9,14 +9,15 @@ import (
 	"path/filepath"
 )
 
+/* constants*/
 const (
-	KABANERO_INDEX_URL_TEST = "https://github.com/kabanero-io/collections/releases/download/v0.1.2/kabanero-index.yaml"
+	KABANEROINDEXURLTEST = "https://github.com/kabanero-io/collections/releases/download/v0.1.2/kabanero-index.yaml"
 
-    GZIP_TAR_0 = "test_data/gZipTarDir0.tar.gz"
+  GZIPTAR0 = "test_data/gZipTarDir0.tar.gz"
 )
 func TestReadUrl(t *testing.T) {
-	url := KABANERO_INDEX_URL_TEST
-	bytes, err := readHttpURL(url)
+	url := KABANEROINDEXURLTEST
+	bytes, err := readHTTPURL(url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +202,7 @@ func TestMergePathWithErrorCheck(t *testing.T) {
 
 
 
-var  gZipTar0_files [] string = [] string {
+var  gZipTar0Files [] string = [] string {
 "trigger.yaml",
 "subdir0/file0",
 "subdir0/file1",
@@ -217,14 +218,14 @@ func TestGUnzipUnTar(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-    file, err := os.Open(GZIP_TAR_0)
+    file, err := os.Open(GZIPTAR0)
 	err = gUnzipUnTar(file, dir) 
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Ensure the files have been expanded
-	for _, fileName := range gZipTar0_files {
+	for _, fileName := range gZipTar0Files {
 		tempFile := filepath.Join(dir, fileName)
 		fileInfo, err := os.Stat(tempFile)
 		if err != nil {

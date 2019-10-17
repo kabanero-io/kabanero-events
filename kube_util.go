@@ -27,8 +27,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
+/* Kubernetes and Kabanero yaml constants*/
 const (
-	V1 = "v1"
+	V1 = "v1" 
 	V1ALPHA1 = "v1alpha1"
 	KABANEROIO = "kabanero.io"
 	KABANERO = "kabanero"
@@ -41,7 +42,7 @@ const (
 	SPEC = "spec"
 	COLLECTIONS = "collections"
 	REPOSITORIES = "repositories"
-	ACTIVE_DEFAULT_COLLECTIONS = "activeDefaultCollections"
+	ACTIVEDEFAULTCOLLECTIONS = "activeDefaultCollections" 
 )
 
 /*
@@ -191,7 +192,7 @@ func getKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string,
 		  if !ok {
 			  continue
 		  }
-		  activeDefaultCollectionsObj, ok := elementMap[ACTIVE_DEFAULT_COLLECTIONS]
+		  activeDefaultCollectionsObj, ok := elementMap[ACTIVEDEFAULTCOLLECTIONS]
 		  if !ok {
 			  continue
 		  }
