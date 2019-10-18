@@ -49,15 +49,19 @@ const (
 /*
  Find the user/token for a Github APi KEy
  The format of the secret:
-    apiVersion: v1
-    kind: Secret
-    metadata:
-      name: <name of secret>
-    type: Opaque
-	data:
-      url: https://github.com/org  or https://github.com/org/repo
-      username: base64 encoded user
-	  token: base64 encoded token
+apiVersion: v1
+kind: Secret
+metadata:
+  name:  kabanero-org-test-secret
+  namespace: kabanero
+  annotations:
+   url: https://github.ibm.com/kabanero-org-test
+type: Opaque
+stringData:
+  url: <url to org or repo>
+data:
+  username:  <base64 encoded user name>
+  token: <base64 encoded token>
 
  If the url in the secret is a prefix of repoURL, and username and token are defined, then return the user and token.
  Return user, token, error.
@@ -101,8 +105,13 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 		if !ok {
 			continue
 		}
+		decodedURLBytes, err := base64.StdEncoding.DecodeString(url)
+		if err != nil {
+			return "", "", err
+		}
 
-		if !strings.HasPrefix(repoURL, url) {
+		decodedURL := string(decodedURLBytes)
+		if !strings.HasPrefix(repoURL, decodedURL) {
 			/* not for this uRL */
 			continue
 		}

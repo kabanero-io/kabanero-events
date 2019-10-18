@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	ghw "gopkg.in/go-playground/webhooks.v3/github"
+	// ghw "gopkg.in/go-playground/webhooks.v3/github"
 	"io/ioutil"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
