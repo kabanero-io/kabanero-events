@@ -157,7 +157,7 @@ func main() {
 	//}
 
 	// Handle GitHub events
-	if gitHubListener, err = NewGitHubEventListener(); err != nil {
+	if gitHubListener, err = NewGitHubEventListener(dynamicClient); err != nil {
 		klog.Fatal(err)
 	}
 
@@ -165,9 +165,24 @@ func main() {
 		payload, err := gitHubListener.ParseEvent(r)
 
 		if err == nil {
-			switch payload.(type) {
-			case ghw.PushPayload:
-				klog.Infof("Received Push event:\n%v\n", payload)
+			/*
+				switch payload.(type) {
+				case RepositoryEvent:
+					// TODO: The type switch isn't working correctly for some reason. Fix.
+					klog.Infof("Received Repository event:\n%v\n", payload)
+				}
+			*/
+
+			klog.Infof("Received Repository event:\n%v\n", payload)
+			// TODO: Fix this mismatch
+			buffer, err := json.Marshal(payload)
+			if err == nil {
+				var f interface{}
+				err := json.Unmarshal(buffer, &f)
+				if err == nil {
+					message := f.(map[string]interface{})
+					triggerProc.processMessage(message)
+				}
 			}
 		} else {
 			klog.Error(err)
