@@ -1,0 +1,17 @@
+variables:
+  - when: 'event.attr1 == "string1"'
+    variables:
+      - when: 'event.attr2 == "string2"'
+        name: directory
+        value : '"string1string2"'
+      - when: 'event.attr2 != "string2"'
+        name: directory
+        value: '"string1notstring2"'
+  - when: 'event.attr1 != "string1"'
+    variables:
+      - when: 'event.attr2 == "string2"'
+        name: directory
+        value: '"notstring1string2"'
+      - when: 'event.attr2 != "string2"'
+        name:  directory
+        value: '"notstring1notstring2"'

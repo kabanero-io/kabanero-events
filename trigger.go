@@ -60,8 +60,10 @@ const (
 Variable as used in trigger
 */
 type Variable struct {
+	When  string `yaml:"when"`
 	Name  string `yaml:"name"`
 	Value string `yaml:"value"`
+	Variables []*Variable `yaml:"variables,omitempty"`
 }
 
 /*
@@ -115,7 +117,7 @@ func (tp *triggerProcessor) initialize(fileName string) error {
 }
 
 func (tp *triggerProcessor) processMessage(message map[string]interface{}) error {
-	env, variables, err := initializeCelEnv(tp.triggerDef, message)
+	env, variables, err := initializeCELEnv(tp.triggerDef, message)
 	if err != nil {
 		return err
 	}
@@ -180,7 +182,7 @@ func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
 }
 
 /* Get initial CEL environment by processing the initialize section */
-func initializeCelEnv(td *TriggerDefinition, message map[string]interface{}) (cel.Env, map[string]interface{}, error) {
+func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}) (cel.Env, map[string]interface{}, error) {
 
 	variables := make(map[string]interface{})
 
@@ -210,100 +212,168 @@ func initializeCelEnv(td *TriggerDefinition, message map[string]interface{}) (ce
 		/* no initialize section */
 		return env, variables, nil
 	}
-
-	/* evaluate value of each variable */
-	for _, nameVal := range td.Variables {
-		//name := nameVal.Name
-		val := nameVal.Value
-		val = strings.Trim(val, " ")
-
-		parsed, issues := env.Parse(val)
-		if issues != nil && issues.Err() != nil {
-			return nil, nil, issues.Err()
-		}
-		checked, issues := env.Check(parsed)
-		if issues != nil && issues.Err() != nil {
-			return nil, nil, issues.Err()
-		}
-		prg, err := env.Program(checked)
+	for _, triggerVar := range td.Variables {
+		env, err = evaluateVariable(env, triggerVar, variables)
 		if err != nil {
 			return nil, nil, err
-		}
-		// out, details, err := prg.Eval(variables)
-		out, _, err := prg.Eval(variables)
-		if err != nil {
-			return nil, nil, err
-		}
-		klog.Infof("Eval of %s results in typename: %s, value type: %T, value: %s\n", val, out.Type().TypeName(), out.Value(), out.Value())
-
-		var ok bool
-		switch out.Type().TypeName() {
-		case TYPEINT:
-			ident := decls.NewIdent(nameVal.Name, decls.Double, nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return nil, nil, err
-			}
-			var intval int64
-			if intval, ok = out.Value().(int64); !ok {
-				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into int64", nameVal.Name, nameVal.Value)
-			}
-			variables[nameVal.Name] = float64(intval)
-		case TYPEBOOL:
-			ident := decls.NewIdent(nameVal.Name, decls.Bool, nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return nil, nil, err
-			}
-			if variables[nameVal.Name], ok = out.Value().(bool); !ok {
-				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into bool", nameVal.Name, nameVal.Value)
-			}
-		case TYPEDOUBLE:
-			ident := decls.NewIdent(nameVal.Name, decls.Double, nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return nil, nil, err
-			}
-			if variables[nameVal.Name], ok = out.Value().(float64); !ok {
-				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into float64", nameVal.Name, nameVal.Value)
-			}
-		case TYPESTRING:
-			ident := decls.NewIdent(nameVal.Name, decls.String, nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return nil, nil, err
-			}
-			if variables[nameVal.Name], ok = out.Value().(string); !ok {
-				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into string", nameVal.Name, nameVal.Value)
-			}
-		case TYPELIST:
-			ident := decls.NewIdent(nameVal.Name, decls.NewListType(decls.Any), nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return nil, nil, err
-			}
-			switch out.Value().(type) {
-			case []ref.Val:
-				variables[nameVal.Name], ok = out.Value().([]ref.Val)
-			case []interface{}:
-				variables[nameVal.Name], ok = out.Value().([]interface{})
-			default:
-				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into %T", nameVal.Name, nameVal.Value, out.Value())
-			}
-		case TYPEMAP:
-			ident := decls.NewIdent(nameVal.Name, decls.NewMapType(decls.String, decls.Any), nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return nil, nil, err
-			}
-			if variables[nameVal.Name], ok = out.Value().(map[string]interface{}); !ok {
-				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into ma[pstring]interface{}", nameVal.Name, nameVal.Value)
-			}
-		default:
-			return nil, nil, fmt.Errorf("Unable to process variable name: %s, value: %s, type %s", nameVal.Name, nameVal.Value, out.Type().TypeName())
 		}
 	}
 	return env, variables, nil
+}
+
+/* Evaluate one variable and update variables map with any new variables 
+	env: the CEL environment
+	triggerVar: the variable declaration in the trigger.yaml
+	variables: variables mappings collection so far
+	Return:
+		env: new environment after variables are updated. Even if there are errors, env can be set to contain all valid variables collected up to the point of error
+*/
+func evaluateVariable( env cel.Env, triggerVar *Variable,  variables map[string]interface{} ) (cel.Env, error) {
+	/* evaluate value of each variable */
+	if triggerVar == nil {
+		return env, nil
+	}
+	boolVal, err := evalCondition(env, triggerVar.When, variables) 
+	if err != nil {
+		return env, err
+	}
+	/* Condition did not meet */
+	if !boolVal {
+		return env, nil
+	}
+	env, err = setOneVariable(env, triggerVar.Name, triggerVar.Value, variables)
+	if err != nil {
+		return env, err
+	}
+
+	/* recursive evaluate */
+	for _, childVar := range triggerVar.Variables {
+		env, err = evaluateVariable(env, childVar, variables)
+		if err != nil {
+			return env, err
+		}
+	}
+	if klog.V(5) {
+		klog.Infof("After evaluating variable name: %s, value: %s, variables contains: %#v", triggerVar.Name, triggerVar.Value, variables)
+
+	}
+	return env, nil
+}
+
+func setOneVariable(env cel.Env, name string, val string, variables map[string]interface{}) (cel.Env, error) {
+	if name == "" {
+		/* name not set */
+		return env, nil
+	}
+	
+	val = strings.Trim(val, " ")
+
+	parsed, issues := env.Parse(val)
+	if issues != nil && issues.Err() != nil {
+		return env, fmt.Errorf("Parsing error setting variable %s to %s, error: %v", name, val, issues.Err())
+	}
+	checked, issues := env.Check(parsed)
+	if issues != nil && issues.Err() != nil {
+		return env, fmt.Errorf("CEL check error when setting variable %s to %s, error: %v", name, val, issues.Err())
+	}
+	prg, err := env.Program(checked)
+	if err != nil {
+		return env, fmt.Errorf("CEL program error when setting variable %s to %s, error: %v", name, val, err)
+	}
+	// out, details, err := prg.Eval(variables)
+	out, _, err := prg.Eval(variables)
+	if err != nil {
+		return env, fmt.Errorf("CEL Eval error when setting variable %s to %s, error: %v", name, val, err)
+	}
+
+	klog.Infof("When setting variable %s to %s, eval of value results in typename: %s, value type: %T, value: %s\n", name, val, out.Type().TypeName(), out.Value(), out.Value())
+
+	var ok bool
+	switch out.Type().TypeName() {
+	case TYPEINT:
+		var intval int64
+		if intval, ok = out.Value().(int64); !ok {
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into int64", name, val)
+		}
+		floatval := float64(intval)
+
+		ident := decls.NewIdent(name, decls.Double, nil)
+		env, err = env.Extend(cel.Declarations(ident))
+		if err != nil {
+			return env, err
+		}
+		variables[name] = floatval
+		klog.Infof("variable %s set to %v", name, floatval)
+	case TYPEBOOL:
+		boolval, ok := out.Value().(bool);
+		if ! ok {
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into bool", name, val)
+		}
+
+		ident := decls.NewIdent(name, decls.Bool, nil)
+		env, err = env.Extend(cel.Declarations(ident))
+		if err != nil {
+			return env, err
+		}
+		variables[name] = boolval
+		klog.Infof("variable %s set to %v", name, boolval)
+	case TYPEDOUBLE:
+		floatvar, ok := out.Value().(float64)
+		if !ok {
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into float64", name, val)
+		}
+
+		ident := decls.NewIdent(name, decls.Double, nil)
+		env, err = env.Extend(cel.Declarations(ident))
+		if err != nil {
+			return env, err
+		}
+		variables[name]  = floatvar
+		klog.Infof("variable %s set to %v", name, floatvar)
+	case TYPESTRING:
+		stringval, ok := out.Value().(string)
+		if !ok {
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into string", name, val)
+		}
+
+		ident := decls.NewIdent(name, decls.String, nil)
+		env, err = env.Extend(cel.Declarations(ident))
+		if err != nil {
+			return env, err
+		}
+		variables[name] = stringval
+		klog.Infof("variable %s set to %v", name, stringval)
+	case TYPELIST:
+		var listval interface{} = out.Value()
+		switch out.Value().(type) {
+		case []ref.Val:
+		case []interface{}:
+		default:
+			return  env, fmt.Errorf("Unable to cast variable %s, value %s into %T", name, val, out.Value())
+		}
+		ident := decls.NewIdent(name, decls.NewListType(decls.Any), nil)
+		env, err = env.Extend(cel.Declarations(ident))
+		if err != nil {
+			return env, err
+		}
+		variables[name] = listval
+		klog.Infof("variable %s set to %v", name, listval)
+	case TYPEMAP:
+		mapval, ok := out.Value().(map[string]interface{})
+		if !ok {
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into ma[pstring]interface{}", name, val)
+		}
+		ident := decls.NewIdent(name, decls.NewMapType(decls.String, decls.Any), nil)
+		env, err = env.Extend(cel.Declarations(ident))
+		if err != nil {
+			return  env, err
+		}
+		variables[name] = mapval
+		klog.Infof("variable %s set to %v", name, mapval)
+	default:
+		return env, fmt.Errorf("In function setOneVariable: Unable to process variable name: %s, value: %s, type %s", name, val, out.Type().TypeName())
+	}
+	return env, nil
 }
 
 func readTriggerDefinition(fileName string) (*TriggerDefinition, error) {
@@ -332,34 +402,47 @@ func findTrigger(env cel.Env, td *TriggerDefinition, variables map[string]interf
 	return nil, nil
 }
 
-func evalTrigger(env cel.Env, trigger *Trigger, variables map[string]interface{}) (*Action, error) {
-	if trigger == nil {
-		return nil, nil
+func evalCondition(env cel.Env, when string, variables map[string]interface{}) (bool, error) {
+	if when == "" {
+		/* unconditional */
+		return true, nil
 	}
-
-	parsed, issues := env.Parse(trigger.When)
+	parsed, issues := env.Parse(when)
 	if issues != nil && issues.Err() != nil {
-		return nil, issues.Err()
+		return false, fmt.Errorf("Error evaluating condition %s, error: %v", when, issues.Err())
 	}
 	checked, issues := env.Check(parsed)
 	if issues != nil && issues.Err() != nil {
-		return nil, issues.Err()
+		return false, fmt.Errorf("Error parsing condition %s, error: %v", when, issues.Err())
 	}
 	prg, err := env.Program(checked)
 	if err != nil {
-		return nil, err
+		return false, fmt.Errorf("Error creating CEL program for condition %s, error: %v", when, err)
 	}
 	// out, details, err := prg.Eval(variables)
 	out, _, err := prg.Eval(variables)
 	if err != nil {
-		return nil, err
+		return false, fmt.Errorf("Error evaluating condition %s, error: %v", when, err)
 	}
 
 	var boolVal bool
 	var ok bool
 	if boolVal, ok = out.Value().(bool); !ok {
-		return nil, fmt.Errorf("The When expression %s does not evaluate to a bool. Instead it is of type %T", trigger.When, out.Value())
+		return false, fmt.Errorf("The when expression %s does not evaluate to a bool. Instead it is of type %T", when, out.Value())
 	}
+	return boolVal, nil
+}
+
+func evalTrigger(env cel.Env, trigger *Trigger, variables map[string]interface{}) (*Action, error) {
+	if trigger == nil {
+		return nil, nil
+	}
+
+	boolVal, err := evalCondition(env, trigger.When, variables)
+	if err != nil {
+		return nil, err
+	}
+
 	if boolVal {
 		/* trigger matched */
 		klog.Infof("Trigger %s matched", trigger.When)
