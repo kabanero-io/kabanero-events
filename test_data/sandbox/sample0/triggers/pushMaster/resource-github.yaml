@@ -2,12 +2,12 @@ apiVersion: tekton.dev/v1alpha1
 kind: PipelineResource
 metadata:
   annotations:
-  name: git-source-{{.jobid}}
+  name: git-source-{{.kabanero.jobid}}
   namespace: {{.kubeNamespace}}
 spec:
   params:
   - name: revision
-    value: {{.refs[2]}}
+    value: {{.kabanero.refs[2]}}
   - name: url
     value: {{.event.data.repository.url}}
   type: git

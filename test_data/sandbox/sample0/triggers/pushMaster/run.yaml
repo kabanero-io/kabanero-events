@@ -1,17 +1,17 @@
 apiVersion: tekton.dev/v1alpha1
 kind: PipelineRun
 metadata:
-  name:  pipeline-run-{{.collectionID}}-{{.jobid}}
+  name:  pipeline-run-{{.kabanero.collectionID}}-{{.kabanero.jobid}}
   namespace: {{.kubeNemsapce}}
 spec:
   pipelineRef:
-    name: {{.collectionID}}-build-deploy-pipeline
+    name: {{.kabanero.collectionID}}-build-deploy-pipeline
   resources:
   - name: git-source
     resourceRef:
-      name: git-source-{{.jobid}}
+      name: git-source-{{.kabanero.jobid}}
   - name: docker-image
     resourceRef:
-      name: docker-image-{{.jobid}}
+      name: docker-image-{{.kabanero.jobid}}
   serviceAccount: {{.serviceAccount}}
   timeout: 1h0m0s

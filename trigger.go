@@ -201,7 +201,15 @@ func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}, ini
 		return nil, nil, err
 	}
 
-	/* set initial variables */
+	/* set initial variables as a map variable with name kabanero */
+	kabaneroIdent := decls.NewIdent(KABANERO, decls.NewMapType(decls.String, decls.Any), nil)
+	env, err = env.Extend(cel.Declarations(kabaneroIdent))
+	if err != nil {
+		return nil, nil, err
+	}
+	variables[KABANERO] = initialVariables
+
+/*
 	if initialVariables != nil {
 		for key, val := range initialVariables {
 			if klog.V(5) {
@@ -227,11 +235,9 @@ func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}, ini
 			}
 		}
 	}
+*/
 
 	/* Create a new environment with event and jobid as a built-in variable*/
-	if klog.V(5) {
-		klog.Infof("Setting variable jobid")
-	}
 	jobIDIdent := decls.NewIdent(JOBID, decls.String, nil)
 	env, err = env.Extend(cel.Declarations(jobIDIdent))
 	if err != nil {
