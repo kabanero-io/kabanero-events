@@ -9,5 +9,5 @@ spec:
   - name: revision
     value: {{index .kabanero.ref 2}}
   - name: url
-    value: {{.event.data.repository.url}}
+    value: {{.event.repository.url}}
   type: git
