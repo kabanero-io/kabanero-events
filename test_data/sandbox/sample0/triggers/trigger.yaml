@@ -10,7 +10,7 @@ triggers:
     triggers:
        - when:  'kabanero.repositoryEvent == "push"'  # push can be push code or tag
          triggers:
-             - when:  'kabanero.refs[1] == "heads" && kabanero.refs[2] == "master"' # push to master
+             - when:  'kabanero.ref[1] == "heads" && kabanero.ref[2] == "master"' # push to master
                action:
                    applyResources:
                      directory: pushMaster

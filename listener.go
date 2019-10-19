@@ -96,7 +96,7 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	// get the refs if they xist
-	refsObj, ok := bodyMap["refs"]
+	refsObj, ok := bodyMap["ref"]
 	if ok {
 		refs, ok := refsObj.(string)
 		if !ok {
@@ -104,7 +104,7 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 			return
 		}
 		refsArray := strings.Split(refs, "/")
-		initialVariables["refs"] = refsArray
+		initialVariables["ref"] = refsArray
 	}
 
 	err = triggerProc.processMessage(bodyMap, initialVariables)
