@@ -32,7 +32,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 	"k8s.io/klog"
-	"net/http"
+//	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -78,14 +78,20 @@ func main() {
 
 	flag.Parse()
 
+    err := testGithubEnterprise() 
+    if err != nil {
+		klog.Fatal(err)
+	} else {
+		klog.Fatal(fmt.Errorf("no error to GHE"))
+	}
+
 	var cfg *rest.Config
-	var err error
 	if strings.Compare(masterURL, "") != 0 {
 		// running outside of Kube cluster
 		klog.Infof("starting Kabanero webhook outside cluster\n")
 		klog.Infof("masterURL: %s\n", masterURL)
 		klog.Infof("kubeconfig: %s\n", kubeconfig)
-		cfg, err = clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
+		/*cfg*/ _, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
 		if err != nil {
 			klog.Fatal(err)
 		}
@@ -157,39 +163,44 @@ func main() {
 	//}
 
 	// Handle GitHub events
-	if gitHubListener, err = NewGitHubEventListener(dynamicClient); err != nil {
+    err = newListener()
+	if err != nil {
 		klog.Fatal(err)
 	}
-
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		payload, err := gitHubListener.ParseEvent(r)
-
-		if err == nil {
-			/*
-				switch payload.(type) {
-				case RepositoryEvent:
-					// TODO: The type switch isn't working correctly for some reason. Fix.
-					klog.Infof("Received Repository event:\n%v\n", payload)
-				}
-			*/
-
-			klog.Infof("Received Repository event:\n%v\n", payload)
-			// TODO: Fix this mismatch
-			buffer, err := json.Marshal(payload)
-			if err == nil {
-				var f interface{}
-				err := json.Unmarshal(buffer, &f)
-				if err == nil {
-					message := f.(map[string]interface{})
-					triggerProc.processMessage(message)
-				}
-			}
-		} else {
-			klog.Error(err)
-		}
-	})
-
-	klog.Fatal(http.ListenAndServe(":8080", nil))
+	
+//	if gitHubListener, err = NewGitHubEventListener(dynamicClient); err != nil {
+//		klog.Fatal(err)
+//	}
+//
+//	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+//		payload, err := gitHubListener.ParseEvent(r)
+//
+//		if err == nil {
+//			/*
+//				switch payload.(type) {
+//				case RepositoryEvent:
+//					// TODO: The type switch isn't working correctly for some reason. Fix.
+//					klog.Infof("Received Repository event:\n%v\n", payload)
+//				}
+//			*/
+//
+//			klog.Infof("Received Repository event:\n%v\n", payload)
+//			// TODO: Fix this mismatch
+//			buffer, err := json.Marshal(payload)
+//			if err == nil {
+//				var f interface{}
+//				err := json.Unmarshal(buffer, &f)
+//				if err == nil {
+//					message := f.(map[string]interface{})
+//					triggerProc.processMessage(message)
+//				}
+//			}
+//		} else {
+//			klog.Error(err)
+//		}
+//	})
+//
+//	klog.Fatal(http.ListenAndServe(":8080", nil))
 
 	select {}
 }
