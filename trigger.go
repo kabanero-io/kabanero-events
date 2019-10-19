@@ -27,6 +27,7 @@ import (
 	"time"
 	"gopkg.in/yaml.v2"
 	"sync"
+	"encoding/json"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
@@ -42,6 +43,7 @@ import (
 /* constants for parsing */
 const (
 	METADATA   = "metadata"
+	LABELS     = "labels"
 	APIVERSION = "apiVersion"
 	KIND       = "kind"
 	NAME       = "name"
@@ -121,7 +123,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, initi
 		klog.Infof("Entering triggerProcessor.processMessage. message: %v, initialVariables %v", message, initialVariables);
 		defer klog.Infof("Leaving triggerProcessor.processMessage")
 	}
-	env, variables, err := initializeCELEnv(tp.triggerDef, message, initialVariables)
+	env, variables, jobid, err := initializeCELEnv(tp.triggerDef, message, initialVariables)
 	if err != nil {
 		return err
 	}
@@ -145,6 +147,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, initi
 	}
 	resourceDir := filepath.Join(tp.triggerDir, directory)
 
+	files := make([] string, 0)
 	err = filepath.Walk(resourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			// problem with accessing a path
@@ -152,29 +155,38 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, initi
 			return err
 		}
 		if info.IsDir() {
-			// don't process directory
-			klog.Infof("Skipping processing rerectory %s", path)
+			// don't process directory itself
+			klog.Infof("Processing directory %s", path)
 			return nil
 		}
 		if strings.HasSuffix(info.Name(), ".yaml") || strings.HasSuffix(info.Name(), ".yml") {
-			substituted, err := substituteTemplateFile(path, variables)
-			if err != nil {
-				return err
-			}
-			/* Apply the file */
-			klog.Infof("applying resource: %s", substituted)
-			/*
-			err = createResource(substituted, dynamicClient)
-			if err != nil {
-				return err
-			}
-			*/
+			files = append(files, path)
 		} else {
 			klog.Infof("Skipping processing file %s", path)
 		}
 		return nil
 	})
 
+	/* ensure all files are substituted OK*/
+	substituted := make([] string, 0)
+	for _, path := range files {
+		after, err := substituteTemplateFile(path, variables)
+		if err != nil {
+			return err
+		}
+		substituted = append(substituted, after)
+	}
+
+	/* Apply the files */
+	for _, resource:= range substituted {
+		if klog.V(5) {
+			klog.Infof("applying resource: %s", resource)
+		}
+		err = createResource(resource, jobid, dynamicClient)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -188,7 +200,7 @@ func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
 }
 
 /* Get initial CEL environment by processing the initialize section */
-func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}, initialVariables map[string]interface{}) (cel.Env, map[string]interface{}, error) {
+func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}, initialVariables map[string]interface{}) (cel.Env, map[string]interface{}, string,  error) {
 	if klog.V(5) {
 		klog.Infof("entering initializeCELEnv")
 		defer klog.Infof("Leaving initializeCELEnv")
@@ -198,17 +210,20 @@ func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}, ini
 	/* initilize empty CEL environment */
 	env, err := cel.NewEnv()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	/* add jobid to initial variables */
-	initialVariables[JOBID] = getTimestamp()
+	jobid := getTimestamp()
+	if initialVariables != nil {
+		initialVariables[JOBID] = jobid
+	}
 
 	/* set initial variables as a CEL map variable with name kabanero */
 	kabaneroIdent := decls.NewIdent(KABANERO, decls.NewMapType(decls.String, decls.Any), nil)
 	env, err = env.Extend(cel.Declarations(kabaneroIdent))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	variables[KABANERO] = initialVariables
 
@@ -223,18 +238,18 @@ func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}, ini
 				newIdent := decls.NewIdent(key, decls.String, nil)
 				env, err = env.Extend(cel.Declarations(newIdent))
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, "", err
 				}
 				variables[key] = val
 			case [] interface{}:	
 				newIdent := decls.NewIdent(key, decls.NewListType(decls.Any), nil)
 				env, err = env.Extend(cel.Declarations(newIdent))
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, "", err
 				}
 				variables[key] = val			
 			default:
-				return nil, nil, fmt.Errorf("In initializeCEL variable %s with value %v has unsupported type %T", key, val, val)
+				return nil, nil, "", fmt.Errorf("In initializeCEL variable %s with value %v has unsupported type %T", key, val, val)
 			}
 		}
 	}
@@ -244,22 +259,22 @@ func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}, ini
 	eventIdent := decls.NewIdent(EVENT, decls.NewMapType(decls.String, decls.Any), nil)
 	env, err = env.Extend(cel.Declarations(eventIdent))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	/* Add event as a new variable */
 	variables[EVENT] = message
 
 	if td.Variables == nil {
 		/* no initialize section */
-		return env, variables, nil
+		return env, variables, jobid, nil
 	}
 	for _, triggerVar := range td.Variables {
 		env, err = evaluateVariable(env, triggerVar, variables)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, "", err
 		}
 	}
-	return env, variables, nil
+	return env, variables, jobid, nil
 }
 
 /* Evaluate one variable and update variables map with any new variables 
@@ -537,12 +552,25 @@ func substituteTemplate(templateStr string, variables map[string]interface{}) (s
 }
 
 /* Create application. Assume it does not already exist */
-func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
+func createResource(resourceStr string, jobid string, dynamicClient dynamic.Interface) error {
 	if klog.V(4) {
 		klog.Infof("Creating resource %s", resourceStr)
 	}
+
+	/* Convert yamml to map */
+	resourceMap, err := yamlToMap([]byte(resourceStr))
+	if err != nil {
+		return fmt.Errorf("Unable to convert resource map: %v", resourceStr)
+	}
+
+	/* conver map to JSON */
+	resourceBytes, err := json.Marshal(resourceMap)
+	if err != nil {
+		return fmt.Errorf("Unable to convert resource map to JSON: %v", resourceMap)	
+	}
+
 	var unstructuredObj = &unstructured.Unstructured{}
-	err := unstructuredObj.UnmarshalJSON([]byte(resourceStr))
+	err = unstructuredObj.UnmarshalJSON(resourceBytes)
 	if err != nil {
 		klog.Errorf("Unable to convert JSON %s to unstructured", resourceStr)
 		return err
@@ -552,16 +580,28 @@ func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
 	if namespace == "" {
 		return fmt.Errorf("resource %s does not contain namepsace", resourceStr)
 	}
-	gvr := schema.GroupVersionResource{group, version, resource}
+
+	/* add labale kabanero.io/jobld = <jobid> */
+	err = setJobID(unstructuredObj, jobid)
+	if err != nil {
+		return err
+	}
+
+	if klog.V(5) {
+		klog.Infof("Resource after adding jobid: %v", unstructuredObj)
+	}
+	 gvr := schema.GroupVersionResource{group, version, resource}
 	if err == nil {
 		var intfNoNS = dynamicClient.Resource(gvr)
 		var intf dynamic.ResourceInterface
 		intf = intfNoNS.Namespace(namespace)
 
-		_, err = intf.Create(unstructuredObj, metav1.CreateOptions{})
-		if err != nil {
-			klog.Errorf("Unable to create resource %s/%s error: %s", namespace, name, err)
-			return err
+		if false {
+			_, err = intf.Create(unstructuredObj, metav1.CreateOptions{})
+			if err != nil {
+				klog.Errorf("Unable to create resource %s/%s error: %s", namespace, name, err)
+				return err
+			}
 		}
 	} else {
 		klog.Errorf("Unable to create resource /%s.  Error: %s", resourceStr, err)
@@ -572,6 +612,36 @@ func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
 	}
 	return nil
 }
+
+func setJobID(unstructuredObj *unstructured.Unstructured, jobid string) error {
+	var objMap = unstructuredObj.Object
+	metadataObj, ok := objMap[METADATA]
+	if !ok {
+		return fmt.Errorf("Resource has no metadata: %v", unstructuredObj)
+	}
+	var metadata map[string]interface{}
+	metadata, ok = metadataObj.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("Resource metadata is not a map: %v", unstructuredObj)
+	}
+
+	labelsObj, ok := metadata[LABELS]
+	var labels map[string]interface{}
+	if !ok {
+		/* create new label */
+		labels = make(map[string]interface{})
+		metadata[LABELS] = labels
+	} else {
+		labels, ok = labelsObj.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("Resource labels is not a map: %v", labels)
+		}
+	}
+	labels["kabanero.io/jobid"] = jobid
+	
+	return nil
+}
+
 
 /* Return GVR, namespace, name, ok */
 func getGroupVersionResourceNamespaceName(unstructuredObj *unstructured.Unstructured) (string, string, string, string, string, error) {

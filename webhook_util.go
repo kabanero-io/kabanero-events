@@ -91,7 +91,7 @@ func readHTTPURL(url string) ([]byte, error) {
 	return bytes, err
 }
 
-func unmarshallKabaneroIndex(bytes []byte) (map[string]interface{}, error) {
+func yamlToMap(bytes []byte) (map[string]interface{}, error) {
 	var myMap map[string]interface{}
 	err := yaml.Unmarshal(bytes, &myMap)
 	if err != nil {
@@ -222,7 +222,7 @@ func downloadTrigger(kabaneroIndexURL string, dir string) error {
 	if klog.V(5) {
 		klog.Infof("Retrieved kabanero index file: %s", string(kabaneroIndexBytes))
 	}
-	kabaneroIndexMap, err := unmarshallKabaneroIndex(kabaneroIndexBytes)
+	kabaneroIndexMap, err := yamlToMap(kabaneroIndexBytes)
 	if err != nil {
 		return err
 	}

@@ -1,7 +1,6 @@
 apiVersion: tekton.dev/v1alpha1
 kind: PipelineResource
 metadata:
-  annotations:
   name: git-source-{{.kabanero.jobid}}
   namespace: {{.kubeNamespace}}
 spec:

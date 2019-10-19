@@ -1,7 +1,6 @@
 apiVersion: tekton.dev/v1alpha1
 kind: PipelineResource
 metadata:
-  annotations:
   name: docker-image-{{.kabanero.jobid}}
   namespace: {{.kubeNamespace}}
 spec:

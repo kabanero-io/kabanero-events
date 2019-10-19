@@ -159,7 +159,7 @@ stacks:
 `
 
 func TestGetTriggerURL(t *testing.T) {
-	collectionMap, err := unmarshallKabaneroIndex([]byte(kabaneroIndex))
+	collectionMap, err := yamlToMap([]byte(kabaneroIndex))
 	if err != nil {
 		t.Fatal(err)
 	}
