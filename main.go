@@ -78,20 +78,14 @@ func main() {
 
 	flag.Parse()
 
-    err := testGithubEnterprise() 
-    if err != nil {
-		klog.Fatal(err)
-	} else {
-		klog.Fatal(fmt.Errorf("no error to GHE"))
-	}
-
+	var err error
 	var cfg *rest.Config
 	if strings.Compare(masterURL, "") != 0 {
 		// running outside of Kube cluster
 		klog.Infof("starting Kabanero webhook outside cluster\n")
 		klog.Infof("masterURL: %s\n", masterURL)
 		klog.Infof("kubeconfig: %s\n", kubeconfig)
-		/*cfg*/ _, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
+		cfg, err = clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
 		if err != nil {
 			klog.Fatal(err)
 		}

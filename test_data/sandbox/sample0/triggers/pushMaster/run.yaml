@@ -1,11 +1,11 @@
 apiVersion: tekton.dev/v1alpha1
 kind: PipelineRun
 metadata:
-  name:  pipeline-run-{{.event.collectionID}}-{{.jobid}}
+  name:  pipeline-run-{{.collectionID}}-{{.jobid}}
   namespace: {{.namespace}}
 spec:
   pipelineRef:
-    name: {{.event.collectionID}}-build-deploy-pipeline
+    name: {{.collectionID}}-build-deploy-pipeline
   resources:
   - name: git-source
     resourceRef:

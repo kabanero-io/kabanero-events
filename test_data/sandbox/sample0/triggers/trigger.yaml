@@ -1,12 +1,16 @@
 variables:
   - name: namespace
-    value: kabanero
+    value: ' "kabanero" '
   - name: serviceAccount
-    value: appsody-sa
+    value: ' "appsody-sa" '
   - name: registry
-    value: '"docker-registry.default.svc:5000/" + namespace" +  "/" + event.repository.name'
+    value: ' "docker-registry.default.svc:5000/" + namespace +  "/" + event.repository.name '
 triggers:
-  - when: 'has(event.collectionID) && event.repositoryEventType == "Push" && event.branch == "master" '
-    action:
-      applyResources:
-          directory: pushMaster
+  - when: 'has(collectionID)' # appsody build
+    triggers:
+       - when:  'repositoryEvent == "push"'  # push can be push code or tag
+         triggers:
+             - when:  'refs[1] == "heads" && refs[2] == "master"' # push to master
+               action:
+                   applyResources:
+                     directory: pushMaster
