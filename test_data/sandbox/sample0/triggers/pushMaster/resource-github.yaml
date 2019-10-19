@@ -3,7 +3,7 @@ kind: PipelineResource
 metadata:
   annotations:
   name: git-source-{{.jobid}}
-  namespace: {{.namespace}}
+  namespace: {{.kubeNamespace}}
 spec:
   params:
   - name: revision

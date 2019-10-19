@@ -37,15 +37,15 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
     header := req.Header
 	klog.Infof("Recevied request. Header: %v", header)
 
-    message := make(map[string]interface{})
-	message["type"] = "Repository"
-	eventTypeHeader, ok := header[http.CanonicalHeaderKey("x-github-event")]
+    initialVariables := make(map[string]interface{})
+	initialVariables["eventType"] = "Repository"
+	reposiotryEventHeader, ok := header[http.CanonicalHeaderKey("x-github-event")]
 	if !ok {
 		klog.Errorf("header does not contain x-github-event. Skipping")
 		return
 	}
-	message["repositoryEvent"] = eventTypeHeader[0]
-	message["repositoryType"] = "github"
+	initialVariables["repositoryEvent"] = reposiotryEventHeader[0]
+	initialVariables["repositoryType"] = "github"
 
 	hostHeader, isEnterprise := header[http.CanonicalHeaderKey("x-github-enterprise-host")]
 	if !isEnterprise {
@@ -71,8 +71,6 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	message["event"] = bodyMap
-
 	owner, name, htmlURL, err := getRepositoryInfo(bodyMap)
 	if err != nil {
 		klog.Errorf("Unable to get repository owner, name, or html_url from webhook message: %v", err);
@@ -92,9 +90,9 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if found {
-		message["collectionPrefix"] = collectionPrefix
-		message["collectionID"] = collectionID
-		message["collectionVersion"] = collectionVersion
+		initialVariables["collectionPrefix"] = collectionPrefix
+		initialVariables["collectionID"] = collectionID
+		initialVariables["collectionVersion"] = collectionVersion
 	}
 
 	// get the refs if they xist
@@ -106,10 +104,10 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 			return
 		}
 		refsArray := strings.Split(refs, "/")
-		message["refs"] = refsArray
+		initialVariables["refs"] = refsArray
 	}
 
-	err = triggerProc.processMessage(message)
+	err = triggerProc.processMessage(bodyMap, initialVariables)
 	if err != nil {
 		klog.Errorf("Error processing webhook message: %v", err)
 	}

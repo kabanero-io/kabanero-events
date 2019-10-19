@@ -1,10 +1,10 @@
 variables:
-  - name: namespace
+  - name: kubeNamespace
     value: ' "kabanero" '
   - name: serviceAccount
     value: ' "appsody-sa" '
   - name: registry
-    value: ' "docker-registry.default.svc:5000/" + namespace +  "/" + event.repository.name '
+    value: ' "docker-registry.default.svc:5000/" + kubeNamespace +  "/" + event.repository.name '
 triggers:
   - when: 'has(collectionID)' # appsody build
     triggers:

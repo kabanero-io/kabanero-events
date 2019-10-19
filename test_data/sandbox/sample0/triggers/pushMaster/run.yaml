@@ -2,7 +2,7 @@ apiVersion: tekton.dev/v1alpha1
 kind: PipelineRun
 metadata:
   name:  pipeline-run-{{.collectionID}}-{{.jobid}}
-  namespace: {{.namespace}}
+  namespace: {{.kubeNemsapce}}
 spec:
   pipelineRef:
     name: {{.collectionID}}-build-deploy-pipeline

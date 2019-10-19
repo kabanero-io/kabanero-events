@@ -245,7 +245,7 @@ func TestApplyTemplateWithCELVariables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, variables, err1 := initializeCELEnv(triggerDef, event)
+	_, variables, err1 := initializeCELEnv(triggerDef, event, nil)
 	if err1 != nil {
 		t.Fatal(err1)
 	}
@@ -291,7 +291,7 @@ func testOneConditional(triggerDef *TriggerDefinition, srcEvent []byte, expected
 	if err != nil {
 		return err
 	}
-	_, variables, err := initializeCELEnv(triggerDef, event)
+	_, variables, err := initializeCELEnv(triggerDef, event, nil)
 	if err != nil {
 		return err
 	}
@@ -338,7 +338,7 @@ func testEvent(triggerDef *TriggerDefinition, srcEvent []byte, expectedDirectory
 	if err != nil {
 		return err
 	}
-	env, variables, err := initializeCELEnv(triggerDef, event)
+	env, variables, err := initializeCELEnv(triggerDef, event, nil)
 	if err != nil {
 		return err
 	}

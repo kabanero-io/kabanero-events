@@ -116,8 +116,12 @@ func (tp *triggerProcessor) initialize(fileName string) error {
 	return nil
 }
 
-func (tp *triggerProcessor) processMessage(message map[string]interface{}) error {
-	env, variables, err := initializeCELEnv(tp.triggerDef, message)
+func (tp *triggerProcessor) processMessage(message map[string]interface{}, initialVariables map[string]interface{}) error {
+	if klog.V(5) {
+		klog.Infof("Entering triggerProcessor.processMessage. message: %v, initialVariables %v", message, initialVariables);
+		defer klog.Infof("Leaving triggerProcessor.processMessage")
+	}
+	env, variables, err := initializeCELEnv(tp.triggerDef, message, initialVariables)
 	if err != nil {
 		return err
 	}
@@ -184,8 +188,11 @@ func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
 }
 
 /* Get initial CEL environment by processing the initialize section */
-func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}) (cel.Env, map[string]interface{}, error) {
-
+func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}, initialVariables map[string]interface{}) (cel.Env, map[string]interface{}, error) {
+	if klog.V(5) {
+		klog.Infof("entering initializeCELEnv")
+		defer klog.Infof("Leaving initializeCELEnv")
+	}
 	variables := make(map[string]interface{})
 
 	/* initilize empty CEL environment */
@@ -194,7 +201,37 @@ func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}) (ce
 		return nil, nil, err
 	}
 
+	/* set initial variables */
+	if initialVariables != nil {
+		for key, val := range initialVariables {
+			if klog.V(5) {
+				klog.Infof("Before creating variable %s with value %v", key, val)
+			}
+			switch val.(type) {
+			case string:
+				newIdent := decls.NewIdent(key, decls.String, nil)
+				env, err = env.Extend(cel.Declarations(newIdent))
+				if err != nil {
+					return nil, nil, err
+				}
+				variables[key] = val
+			case [] interface{}:	
+				newIdent := decls.NewIdent(key, decls.NewListType(decls.Any), nil)
+				env, err = env.Extend(cel.Declarations(newIdent))
+				if err != nil {
+					return nil, nil, err
+				}
+				variables[key] = val			
+			default:
+				return nil, nil, fmt.Errorf("In initializeCEL variable %s with value %v has unsupported type %T", key, val, val)
+			}
+		}
+	}
+
 	/* Create a new environment with event and jobid as a built-in variable*/
+	if klog.V(5) {
+		klog.Infof("Setting variable jobid")
+	}
 	jobIDIdent := decls.NewIdent(JOBID, decls.String, nil)
 	env, err = env.Extend(cel.Declarations(jobIDIdent))
 	if err != nil {
@@ -230,7 +267,7 @@ func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}) (ce
 	Return:
 		env: new environment after variables are updated. Even if there are errors, env can be set to contain all valid variables collected up to the point of error
 */
-func evaluateVariable( env cel.Env, triggerVar *Variable,  variables map[string]interface{} ) (cel.Env, error) {
+func evaluateVariable(env cel.Env, triggerVar *Variable,  variables map[string]interface{} ) (cel.Env, error) {
 	/* evaluate value of each variable */
 	if triggerVar == nil {
 		return env, nil
