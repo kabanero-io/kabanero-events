@@ -27,12 +27,12 @@ import (
 	"time"
 	"gopkg.in/yaml.v2"
 	"sync"
-	"encoding/json"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types/ref"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -557,18 +557,11 @@ func createResource(resourceStr string, jobid string, dynamicClient dynamic.Inte
 		klog.Infof("Creating resource %s", resourceStr)
 	}
 
-	/* Convert yamml to map */
-	resourceMap, err := yamlToMap([]byte(resourceStr))
+	/* Convert yaml to unstructured*/
+	resourceBytes, err := k8syaml.ToJSON([]byte(resourceStr))
 	if err != nil {
-		return fmt.Errorf("Unable to convert resource map: %v", resourceStr)
+		return fmt.Errorf("Unable to convert yaml resource to JSON: %v", resourceStr)
 	}
-
-	/* conver map to JSON */
-	resourceBytes, err := json.Marshal(resourceMap)
-	if err != nil {
-		return fmt.Errorf("Unable to convert resource map to JSON: %v", resourceMap)	
-	}
-
 	var unstructuredObj = &unstructured.Unstructured{}
 	err = unstructuredObj.UnmarshalJSON(resourceBytes)
 	if err != nil {
@@ -596,12 +589,10 @@ func createResource(resourceStr string, jobid string, dynamicClient dynamic.Inte
 		var intf dynamic.ResourceInterface
 		intf = intfNoNS.Namespace(namespace)
 
-		if false {
-			_, err = intf.Create(unstructuredObj, metav1.CreateOptions{})
-			if err != nil {
-				klog.Errorf("Unable to create resource %s/%s error: %s", namespace, name, err)
-				return err
-			}
+		_, err = intf.Create(unstructuredObj, metav1.CreateOptions{})
+		if err != nil {
+			klog.Errorf("Unable to create resource %s/%s error: %s", namespace, name, err)
+			return err
 		}
 	} else {
 		klog.Errorf("Unable to create resource /%s.  Error: %s", resourceStr, err)

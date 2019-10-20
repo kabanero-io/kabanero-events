@@ -5,6 +5,9 @@ variables:
     value: ' "appsody-sa" '
   - name: registry
     value: ' "docker-registry.default.svc:5000/" + kubeNamespace +  "/" + event.repository.name '
+  - when: 'kabanero.eventType=="Repository"'
+    name: kubeNameSuffix
+    value: 'event.repository.owner.login + "-" + event.repository.name + "-" + kabanero.jobid'
 triggers:
   - when: 'has(kabanero.collectionID)' # appsody build
     triggers:
