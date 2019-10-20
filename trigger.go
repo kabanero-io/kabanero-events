@@ -49,13 +49,14 @@ const (
 	NAME       = "name"
 	NAMESPACE  = "namespace"
 	EVENT      = "event"
-        JOBID      = "jobid"
+    JOBID      = "jobid"
 	TYPEINT    = "int"
 	TYPEDOUBLE = "double"
 	TYPEBOOL   = "bool"
 	TYPESTRING = "string"
 	TYPELIST   = "list"
 	TYPEMAP    = "map"
+	WEBHOOK    = "webhook"
 )
 
 /*
@@ -118,12 +119,12 @@ func (tp *triggerProcessor) initialize(fileName string) error {
 	return nil
 }
 
-func (tp *triggerProcessor) processMessage(message map[string]interface{}, initialVariables map[string]interface{}) error {
+func (tp *triggerProcessor) processMessage(message map[string]interface{}, ) error {
 	if klog.V(5) {
-		klog.Infof("Entering triggerProcessor.processMessage. message: %v, initialVariables %v", message, initialVariables);
+		klog.Infof("Entering triggerProcessor.processMessage. message: %v", message);
 		defer klog.Infof("Leaving triggerProcessor.processMessage")
 	}
-	env, variables, jobid, err := initializeCELEnv(tp.triggerDef, message, initialVariables)
+	env, variables, jobid, err := initializeCELEnv(tp.triggerDef, message)
 	if err != nil {
 		return err
 	}
@@ -199,8 +200,13 @@ func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
 	return newMap
 }
 
-/* Get initial CEL environment by processing the initialize section */
-func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}, initialVariables map[string]interface{}) (cel.Env, map[string]interface{}, string,  error) {
+/* Get initial CEL environment by processing the initialize section.
+	Return: cel.Env: the CEL environment
+		map[string]interface{}: variables used during substitution
+		string: jobid
+		error: any error encountered
+ */
+func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}) (cel.Env, map[string]interface{}, string,  error) {
 	if klog.V(5) {
 		klog.Infof("entering initializeCELEnv")
 		defer klog.Infof("Leaving initializeCELEnv")
@@ -213,56 +219,47 @@ func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}, ini
 		return nil, nil, "", err
 	}
 
-	/* add jobid to initial variables */
-	jobid := getTimestamp()
-	if initialVariables != nil {
-		initialVariables[JOBID] = jobid
-	}
-
-	/* set initial variables as a CEL map variable with name kabanero */
-	kabaneroIdent := decls.NewIdent(KABANERO, decls.NewMapType(decls.String, decls.Any), nil)
-	env, err = env.Extend(cel.Declarations(kabaneroIdent))
-	if err != nil {
-		return nil, nil, "", err
-	}
-	variables[KABANERO] = initialVariables
-
-/*
-	if initialVariables != nil {
-		for key, val := range initialVariables {
-			if klog.V(5) {
-				klog.Infof("Before creating variable %s with value %v", key, val)
-			}
-			switch val.(type) {
-			case string:
-				newIdent := decls.NewIdent(key, decls.String, nil)
-				env, err = env.Extend(cel.Declarations(newIdent))
-				if err != nil {
-					return nil, nil, "", err
-				}
-				variables[key] = val
-			case [] interface{}:	
-				newIdent := decls.NewIdent(key, decls.NewListType(decls.Any), nil)
-				env, err = env.Extend(cel.Declarations(newIdent))
-				if err != nil {
-					return nil, nil, "", err
-				}
-				variables[key] = val			
-			default:
-				return nil, nil, "", fmt.Errorf("In initializeCEL variable %s with value %v has unsupported type %T", key, val, val)
-			}
+	/* add jobid to kabanero variables */
+	jobid := ""
+	kabaneroVariablesObj, ok := message[KABANERO]
+	if ok {
+		kabaneroVariables, ok := kabaneroVariablesObj.(map[string]interface{})
+		if ok {
+			jobid = getTimestamp()
+			kabaneroVariables[JOBID] = jobid
 		}
 	}
-*/
 
 
-	eventIdent := decls.NewIdent(EVENT, decls.NewMapType(decls.String, decls.Any), nil)
-	env, err = env.Extend(cel.Declarations(eventIdent))
-	if err != nil {
-		return nil, nil, "", err
+	for key, val := range message {
+		switch val.(type) {
+		case map[string]interface{}:
+			ident := decls.NewIdent(key, decls.NewMapType(decls.String, decls.Any), nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return nil, nil, "", err
+			}
+			/* Add event as a new variable */
+			variables[key] = val
+		case string:
+			ident := decls.NewIdent(key, decls.String, nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return nil, nil, "", err
+			}
+			variables[key] = val
+		case [] interface{}:	
+			ident := decls.NewIdent(key, decls.NewListType(decls.Any), nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return nil, nil, "", err
+			}
+			variables[key] = val			
+		default:
+			return nil, nil, "", fmt.Errorf("In initializeCEL variable %s with value %v has unsupported type %T", key, val, val)
+		}
 	}
-	/* Add event as a new variable */
-	variables[EVENT] = message
+
 
 	if td.Variables == nil {
 		/* no initialize section */

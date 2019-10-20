@@ -234,7 +234,7 @@ got-string-1
 
 /* Test applying template using CEL variables */
 func TestApplyTemplateWithCELVariables(t *testing.T) {
-	srcEvent := []byte(`{"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} } `)
+	srcEvent := []byte(`{ "event":  {"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} }} `)
 	var event map[string]interface{}
 	err := json.Unmarshal(srcEvent, &event)
 	if err != nil {
@@ -245,7 +245,7 @@ func TestApplyTemplateWithCELVariables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, variables, _, err1 := initializeCELEnv(triggerDef, event, nil)
+	_, variables, _, err1 := initializeCELEnv(triggerDef, event)
 	if err1 != nil {
 		t.Fatal(err1)
 	}
@@ -263,10 +263,10 @@ func TestApplyTemplateWithCELVariables(t *testing.T) {
 
 func TestConditionalVariable(t *testing.T) {
 	srcEvents := [][] byte {
-		[]byte(`{"attr1": "string1", "attr2": "string2"}`),
-		[]byte(`{"attr1": "string1a", "attr2": "string2"}`),
-		[]byte(`{"attr1": "string1", "attr2": "string2a"}`),
-		[]byte(`{"attr1": "string1a", "attr2": "string2a"}`),
+		[]byte(`{ "event": {"attr1": "string1", "attr2": "string2"} }`),
+		[]byte(`{ "event": {"attr1": "string1a", "attr2": "string2"} }`),
+		[]byte(`{ "event": {"attr1": "string1", "attr2": "string2a"}}`),
+		[]byte(`{ "event": {"attr1": "string1a", "attr2": "string2a"} }`),
 	}
 
 	triggerDef, err := readTriggerDefinition(TRIGGER3)
@@ -291,7 +291,7 @@ func testOneConditional(triggerDef *TriggerDefinition, srcEvent []byte, expected
 	if err != nil {
 		return err
 	}
-	_, variables, _, err := initializeCELEnv(triggerDef, event, nil)
+	_, variables, _, err := initializeCELEnv(triggerDef, event)
 	if err != nil {
 		return err
 	}
@@ -309,10 +309,10 @@ func testOneConditional(triggerDef *TriggerDefinition, srcEvent []byte, expected
 
 func TestFindTrigger(t *testing.T) {
 	srcEvents := [][]byte {
-		[]byte(`{"attr1": "string1", "attr2": "string2"}`),
-		[]byte(`{"attr1": "string1a", "attr2": "string2"}`),
-		[]byte(`{"attr1": "string1", "attr2": "string2a"}`),
-		[]byte(`{"attr1": "string1a", "attr2": "string2a"}`),
+		[]byte(`{ "event" : {"attr1": "string1", "attr2": "string2"}}`),
+		[]byte(`{ "event" : {"attr1": "string1a", "attr2": "string2"}}`),
+		[]byte(`{ "event" : {"attr1": "string1", "attr2": "string2a"}}`),
+		[]byte(`{ "event" : {"attr1": "string1a", "attr2": "string2a"}}`),
 	}
 
 
@@ -338,7 +338,7 @@ func testEvent(triggerDef *TriggerDefinition, srcEvent []byte, expectedDirectory
 	if err != nil {
 		return err
 	}
-	env, variables, _, err := initializeCELEnv(triggerDef, event, nil)
+	env, variables, _, err := initializeCELEnv(triggerDef, event)
 	if err != nil {
 		return err
 	}

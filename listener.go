@@ -107,7 +107,10 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 		initialVariables["ref"] = refsArray
 	}
 
-	err = triggerProc.processMessage(bodyMap, initialVariables)
+	message := make(map[string]interface{})
+	message[KABANERO] = initialVariables
+	message[EVENT] = bodyMap
+	err = triggerProc.processMessage(message)
 	if err != nil {
 		klog.Errorf("Error processing webhook message: %v", err)
 	}
