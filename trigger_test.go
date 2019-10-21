@@ -28,7 +28,7 @@ initialize:
   - name: name2
     value: value2
 `
-	var triggerDef TriggerDefinition
+	var triggerDef EventTriggerDefinition
 	err := yaml.Unmarshal([]byte(trigger), &triggerDef)
 	if err != nil {
 		t.Fatal(err)
@@ -285,7 +285,7 @@ func TestConditionalVariable(t *testing.T) {
 	}
 }
 
-func testOneConditional(triggerDef *TriggerDefinition, srcEvent []byte, expectedDirectory  string) error {
+func testOneConditional(triggerDef *EventTriggerDefinition, srcEvent []byte, expectedDirectory  string) error {
 	var event map[string]interface{}
 	err := json.Unmarshal(srcEvent, &event)
 	if err != nil {
@@ -332,7 +332,7 @@ func TestFindTrigger(t *testing.T) {
 	}
 }
 
-func testEvent(triggerDef *TriggerDefinition, srcEvent []byte, expectedDirectory string) error {
+func testEvent(triggerDef *EventTriggerDefinition, srcEvent []byte, expectedDirectory string) error {
 	var event map[string]interface{}
 	err := json.Unmarshal(srcEvent, &event)
 	if err != nil {

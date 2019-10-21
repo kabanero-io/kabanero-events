@@ -87,22 +87,22 @@ type Action struct {
 /*
 Trigger as used in the trigger file
 */
-type Trigger struct {
+type EventTrigger struct {
 	When     string     `yaml:"when"`
 	Action   *Action    `yaml:"action,omitempty"`
-	Triggers []*Trigger `yaml:"triggers,omitempty"`
+	EventTriggers []*EventTrigger `yaml:"eventTriggers,omitempty"`
 }
 
 /*
 TriggerDefinition as used in the trigger file
 */
-type TriggerDefinition struct {
+type EventTriggerDefinition struct {
 	Variables []*Variable `yaml:"variables,omitempty"`
-	Triggers  []*Trigger  `yaml:"triggers,omitempty"`
+	EventTriggers  []*EventTrigger  `yaml:"eventTriggers,omitempty"`
 }
 
 type triggerProcessor struct {
-	triggerDef *TriggerDefinition
+	triggerDef *EventTriggerDefinition
 	triggerDir string // directory where trigger file is stored
 }
 
@@ -207,7 +207,7 @@ func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
 		string: jobid
 		error: any error encountered
  */
-func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}) (cel.Env, map[string]interface{}, string,  error) {
+func initializeCELEnv(td *EventTriggerDefinition, message map[string]interface{}) (cel.Env, map[string]interface{}, string,  error) {
 	if klog.V(5) {
 		klog.Infof("entering initializeCELEnv")
 		defer klog.Infof("Leaving initializeCELEnv")
@@ -277,7 +277,7 @@ func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}) (ce
 
 /* Evaluate one variable and update variables map with any new variables 
 	env: the CEL environment
-	triggerVar: the variable declaration in the trigger.yaml
+	triggerVar: the variable declaration in the eventTrigger.yaml
 	variables: variables mappings collection so far
 	Return:
 		env: new environment after variables are updated. Even if there are errors, env can be set to contain all valid variables collected up to the point of error
@@ -430,23 +430,23 @@ func setOneVariable(env cel.Env, name string, val string, variables map[string]i
 	return env, nil
 }
 
-func readTriggerDefinition(fileName string) (*TriggerDefinition, error) {
+func readTriggerDefinition(fileName string) (*EventTriggerDefinition, error) {
 	bytes, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		return nil, err
 	}
 
-	var t TriggerDefinition
+	var t EventTriggerDefinition
 	err = yaml.Unmarshal(bytes, &t)
 	return &t, err
 }
 
 /* Find Action for trigger. Only return the first one found*/
-func findTrigger(env cel.Env, td *TriggerDefinition, variables map[string]interface{}) (*Action, error) {
-	if td.Triggers == nil {
+func findTrigger(env cel.Env, td *EventTriggerDefinition, variables map[string]interface{}) (*Action, error) {
+	if td.EventTriggers == nil {
 		return nil, nil
 	}
-	for _, trigger := range td.Triggers {
+	for _, trigger := range td.EventTriggers {
 		action, err := evalTrigger(env, trigger, variables)
 		if action != nil || err != nil {
 			// either found a match or error
@@ -487,7 +487,7 @@ func evalCondition(env cel.Env, when string, variables map[string]interface{}) (
 	return boolVal, nil
 }
 
-func evalTrigger(env cel.Env, trigger *Trigger, variables map[string]interface{}) (*Action, error) {
+func evalTrigger(env cel.Env, trigger *EventTrigger, variables map[string]interface{}) (*Action, error) {
 	if trigger == nil {
 		return nil, nil
 	}
@@ -505,11 +505,11 @@ func evalTrigger(env cel.Env, trigger *Trigger, variables map[string]interface{}
 		}
 
 		/* no action. Check children to see if they match */
-		if trigger.Triggers == nil {
+		if trigger.EventTriggers == nil {
 			return nil, nil
 		}
 
-		for _, trigger := range trigger.Triggers {
+		for _, trigger := range trigger.EventTriggers {
 			action, err := evalTrigger(env, trigger, variables)
 			if action != nil || err != nil {
 				// either found a match or error

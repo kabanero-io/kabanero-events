@@ -202,7 +202,7 @@ func TestMergePathWithErrorCheck(t *testing.T) {
 }
 
 var gZipTar0Files []string = []string{
-	"trigger.yaml",
+	"eventTriggers.yaml",
 	"subdir0/file0",
 	"subdir0/file1",
 	"subdir1/file0",

@@ -3,9 +3,9 @@ variables:
     value: event.attr1
   - name: var2
     value: event.attr2
-triggers:
+eventTriggers:
   - when: 'var1 == "string1"'
-    triggers:
+    eventTriggers:
       - when: 'var2 == "string2"'
         action:
           applyResources:
@@ -15,7 +15,7 @@ triggers:
           applyResources:
             directory: 'string1notstring2'
   - when: 'var1 != "string1"'
-    triggers:
+    eventTriggers:
       - when: 'var2 == "string2"'
         action:
           applyResources:
