@@ -1,20 +1,20 @@
-
 package main
 
 import (
 	"fmt"
-	"testing"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"testing"
 )
 
 /* constants*/
 const (
 	KABANEROINDEXURLTEST = "https://github.com/kabanero-io/collections/releases/download/v0.1.2/kabanero-index.yaml"
 
-  GZIPTAR0 = "test_data/gZipTarDir0.tar.gz"
+	GZIPTAR0 = "test_data/gZipTarDir0.tar.gz"
 )
+
 func TestReadUrl(t *testing.T) {
 	url := KABANEROINDEXURLTEST
 	bytes, err := readHTTPURL(url)
@@ -24,7 +24,7 @@ func TestReadUrl(t *testing.T) {
 	fmt.Printf("URL %s has content: %s", url, string(bytes))
 }
 
-var kabaneroIndex =`triggers:
+var kabaneroIndex = `triggers:
  - description: sample trigger
    url: https://host/trigger-path
 stacks:
@@ -157,12 +157,13 @@ stacks:
     url: https://github.com/kabanero-io/collections/releases/download/v0.1.2/incubator.nodejs.v0.2.5.templates.simple.tar.gz
   version: 0.2.5
 `
+
 func TestGetTriggerURL(t *testing.T) {
-	collectionMap, err := unmarshallKabaneroIndex([]byte(kabaneroIndex))
+	collectionMap, err := yamlToMap([]byte(kabaneroIndex))
 	if err != nil {
 		t.Fatal(err)
-	} 
-	url, err := getTriggerURL(collectionMap) 
+	}
+	url, err := getTriggerURL(collectionMap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,43 +173,41 @@ func TestGetTriggerURL(t *testing.T) {
 }
 
 type mergePathData struct {
-  dir string
-  toMerge string
-  succeed bool
+	dir     string
+	toMerge string
+	succeed bool
 }
 
-var mergedPathTestData = [] mergePathData{
-	{ ".", "abc", true},
-	{ ".", "abc/def", true},
-	{ ".", "abc/def/ghi", true},
-	{ ".", "abc/../def", true},
-	{ ".", "..", false},
-	{ ".", "../..", false},
-	{ ".", "/abc", true}, // having '/' will still append to the paath
-	{ ".", "\\abc", true}, // having '\\' will still append to the path
+var mergedPathTestData = []mergePathData{
+	{".", "abc", true},
+	{".", "abc/def", true},
+	{".", "abc/def/ghi", true},
+	{".", "abc/../def", true},
+	{".", "..", false},
+	{".", "../..", false},
+	{".", "/abc", true},  // having '/' will still append to the paath
+	{".", "\\abc", true}, // having '\\' will still append to the path
 }
 
 func TestMergePathWithErrorCheck(t *testing.T) {
-		
+
 	for _, testData := range mergedPathTestData {
-		 mergedPath, err := mergePathWithErrorCheck(testData.dir, testData.toMerge)
-		 succeeded := err == nil
-		 if testData.succeed  != succeeded {
-			 t.Fatal(fmt.Errorf("Unexpected error when merging %s with %s, error: %s, mergedPath: %s", testData.dir, testData.toMerge, err, mergedPath))
-		 }
-   }
+		mergedPath, err := mergePathWithErrorCheck(testData.dir, testData.toMerge)
+		succeeded := err == nil
+		if testData.succeed != succeeded {
+			t.Fatal(fmt.Errorf("Unexpected error when merging %s with %s, error: %s, mergedPath: %s", testData.dir, testData.toMerge, err, mergedPath))
+		}
+	}
 
 }
 
-
-
-var  gZipTar0Files [] string = [] string {
-"trigger.yaml",
-"subdir0/file0",
-"subdir0/file1",
-"subdir1/file0",
-"subdir1/file1",
-"subdir1/file2",
+var gZipTar0Files []string = []string{
+	"trigger.yaml",
+	"subdir0/file0",
+	"subdir0/file1",
+	"subdir1/file0",
+	"subdir1/file1",
+	"subdir1/file2",
 }
 
 func TestGUnzipUnTar(t *testing.T) {
@@ -218,8 +217,8 @@ func TestGUnzipUnTar(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-    file, err := os.Open(GZIPTAR0)
-	err = gUnzipUnTar(file, dir) 
+	file, err := os.Open(GZIPTAR0)
+	err = gUnzipUnTar(file, dir)
 	if err != nil {
 		t.Fatal(err)
 	}

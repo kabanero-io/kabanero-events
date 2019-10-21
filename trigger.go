@@ -24,42 +24,49 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
-
+	"time"
 	"gopkg.in/yaml.v2"
+	"sync"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types/ref"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 
-	"k8s.io/klog"
-	"k8s.io/client-go/dynamic"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
- 	 metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/klog"
 )
 
 /* constants for parsing */
 const (
 	METADATA   = "metadata"
+	LABELS     = "labels"
 	APIVERSION = "apiVersion"
 	KIND       = "kind"
 	NAME       = "name"
 	NAMESPACE  = "namespace"
-	EVENT = "event"
+	EVENT      = "event"
+    JOBID      = "jobid"
 	TYPEINT    = "int"
 	TYPEDOUBLE = "double"
 	TYPEBOOL   = "bool"
 	TYPESTRING = "string"
 	TYPELIST   = "list"
 	TYPEMAP    = "map"
+	WEBHOOK    = "webhook"
 )
 
-/* 
+/*
 Variable as used in trigger
 */
 type Variable struct {
-	Name      string       `yaml:"name"`
-	Value     string       `yaml:"value"`
+	When  string `yaml:"when"`
+	Name  string `yaml:"name"`
+	Value string `yaml:"value"`
+	Variables []*Variable `yaml:"variables,omitempty"`
 }
 
 /*
@@ -76,27 +83,26 @@ type Action struct {
 	ApplyResources *ApplyResource `yaml:"applyResources"`
 }
 
-/* 
+/*
 Trigger as used in the trigger file
 */
 type Trigger struct {
 	When     string     `yaml:"when"`
-	Action   *Action     `yaml:"action,omitempty"`
+	Action   *Action    `yaml:"action,omitempty"`
 	Triggers []*Trigger `yaml:"triggers,omitempty"`
 }
-
 
 /*
 TriggerDefinition as used in the trigger file
 */
 type TriggerDefinition struct {
-	Variables  []*Variable `yaml:"variables,omitempty"`
-	Triggers   []*Trigger   `yaml:"triggers,omitempty"`
+	Variables []*Variable `yaml:"variables,omitempty"`
+	Triggers  []*Trigger  `yaml:"triggers,omitempty"`
 }
 
 type triggerProcessor struct {
 	triggerDef *TriggerDefinition
-	triggerDir string  // directory where trigger file is stored
+	triggerDir string // directory where trigger file is stored
 }
 
 func newTriggerProcessor() *triggerProcessor {
@@ -113,61 +119,75 @@ func (tp *triggerProcessor) initialize(fileName string) error {
 	return nil
 }
 
-
-func (tp *triggerProcessor) processMessage(message map[string]interface{}) error {
-	env, variables, err := initializeCelEnv(tp.triggerDef, message)
+func (tp *triggerProcessor) processMessage(message map[string]interface{}, ) error {
+	if klog.V(5) {
+		klog.Infof("Entering triggerProcessor.processMessage. message: %v", message);
+		defer klog.Infof("Leaving triggerProcessor.processMessage")
+	}
+	env, variables, jobid, err := initializeCELEnv(tp.triggerDef, message)
 	if err != nil {
 		return err
 	}
 
 	/* Go through the trigger section to find the rule to fire*/
 	action, err := findTrigger(env, tp.triggerDef, variables)
-	if  err != nil {
+	if err != nil {
 		return err
 	}
 
 	/* Fire the rule */
-    if action == nil {
-        /* no action found */
-        klog.Infof("No action found for message %s", message)
-        return nil
-    }
+	if action == nil {
+		/* no action found */
+		klog.Infof("No action found for message %s", message)
+		return nil
+	}
 	directory := action.ApplyResources.Directory
 	if directory == "" {
-        klog.Errorf("action drectory in trigger file is empty" )
-        return fmt.Errorf("action directory in trigger file is empty")
+		klog.Errorf("action drectory in trigger file is empty")
+		return fmt.Errorf("action directory in trigger file is empty")
 	}
 	resourceDir := filepath.Join(tp.triggerDir, directory)
-	
+
+	files := make([] string, 0)
 	err = filepath.Walk(resourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-                    // problem with accessing a path
-		    klog.Errorf("problem processing trigger %s, error %s", path, err)
+			// problem with accessing a path
+			klog.Errorf("problem processing trigger %s, error %s", path, err)
 			return err
 		}
 		if info.IsDir() {
-                   // don't process directory
-		   klog.Infof("Skipping processing rerectory %s", path)
+			// don't process directory itself
+			klog.Infof("Processing directory %s", path)
 			return nil
 		}
 		if strings.HasSuffix(info.Name(), ".yaml") || strings.HasSuffix(info.Name(), ".yml") {
-			 substituted, err := substituteTemplateFile(path, variables) 
-			 if err != nil {
-				 return err
-			 }
-			 /* Apply the file */
-			 klog.Infof("applying resource: %s", substituted)
-			 err = createResource(substituted, dynamicClient)
-             if err != nil {
-                 return err
-             }
+			files = append(files, path)
 		} else {
-		   klog.Infof("Skipping processing file %s", path)
+			klog.Infof("Skipping processing file %s", path)
 		}
 		return nil
 	})
 
+	/* ensure all files are substituted OK*/
+	substituted := make([] string, 0)
+	for _, path := range files {
+		after, err := substituteTemplateFile(path, variables)
+		if err != nil {
+			return err
+		}
+		substituted = append(substituted, after)
+	}
 
+	/* Apply the files */
+	for _, resource:= range substituted {
+		if klog.V(5) {
+			klog.Infof("applying resource: %s", resource)
+		}
+		err = createResource(resource, jobid, dynamicClient)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -180,124 +200,233 @@ func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
 	return newMap
 }
 
-/* Get initial CEL environment by processing the initialize section */
-func initializeCelEnv(td *TriggerDefinition, message map[string]interface{}) (cel.Env, map[string]interface{}, error) {
-
+/* Get initial CEL environment by processing the initialize section.
+	Return: cel.Env: the CEL environment
+		map[string]interface{}: variables used during substitution
+		string: jobid
+		error: any error encountered
+ */
+func initializeCELEnv(td *TriggerDefinition, message map[string]interface{}) (cel.Env, map[string]interface{}, string,  error) {
+	if klog.V(5) {
+		klog.Infof("entering initializeCELEnv")
+		defer klog.Infof("Leaving initializeCELEnv")
+	}
 	variables := make(map[string]interface{})
 
 	/* initilize empty CEL environment */
 	env, err := cel.NewEnv()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
-	/* Create a new environment with event as a built-in variable*/
-	eventIdent := decls.NewIdent(EVENT, decls.NewMapType(decls.String, decls.Any), nil)
-	env, err = env.Extend(cel.Declarations(eventIdent))
-	if err != nil {
-		return nil, nil, err
+	/* add jobid to kabanero variables */
+	jobid := ""
+	kabaneroVariablesObj, ok := message[KABANERO]
+	if ok {
+		kabaneroVariables, ok := kabaneroVariablesObj.(map[string]interface{})
+		if ok {
+			jobid = getTimestamp()
+			kabaneroVariables[JOBID] = jobid
+		}
 	}
-	/* Add event as a new variable */
-	variables[EVENT] = message
+
+
+	for key, val := range message {
+		switch val.(type) {
+		case map[string]interface{}:
+			ident := decls.NewIdent(key, decls.NewMapType(decls.String, decls.Any), nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return nil, nil, "", err
+			}
+			/* Add event as a new variable */
+			variables[key] = val
+		case string:
+			ident := decls.NewIdent(key, decls.String, nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return nil, nil, "", err
+			}
+			variables[key] = val
+		case [] interface{}:	
+			ident := decls.NewIdent(key, decls.NewListType(decls.Any), nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return nil, nil, "", err
+			}
+			variables[key] = val			
+		default:
+			return nil, nil, "", fmt.Errorf("In initializeCEL variable %s with value %v has unsupported type %T", key, val, val)
+		}
+	}
+
 
 	if td.Variables == nil {
 		/* no initialize section */
-		return env, variables, nil
+		return env, variables, jobid, nil
 	}
+	for _, triggerVar := range td.Variables {
+		env, err = evaluateVariable(env, triggerVar, variables)
+		if err != nil {
+			return nil, nil, "", err
+		}
+	}
+	return env, variables, jobid, nil
+}
 
+/* Evaluate one variable and update variables map with any new variables 
+	env: the CEL environment
+	triggerVar: the variable declaration in the trigger.yaml
+	variables: variables mappings collection so far
+	Return:
+		env: new environment after variables are updated. Even if there are errors, env can be set to contain all valid variables collected up to the point of error
+*/
+func evaluateVariable(env cel.Env, triggerVar *Variable,  variables map[string]interface{} ) (cel.Env, error) {
 	/* evaluate value of each variable */
-	for _, nameVal := range td.Variables {
-		//name := nameVal.Name
-		val := nameVal.Value
-		val = strings.Trim(val, " ")
+	if triggerVar == nil {
+		return env, nil
+	}
+	boolVal, err := evalCondition(env, triggerVar.When, variables) 
+	if err != nil {
+		return env, err
+	}
+	/* Condition did not meet */
+	if !boolVal {
+		return env, nil
+	}
+	env, err = setOneVariable(env, triggerVar.Name, triggerVar.Value, variables)
+	if err != nil {
+		return env, err
+	}
 
-		parsed, issues := env.Parse(val)
-		if issues != nil && issues.Err() != nil {
-			return nil, nil, issues.Err()
-		}
-		checked, issues := env.Check(parsed)
-		if issues != nil && issues.Err() != nil {
-			return nil, nil, issues.Err()
-		}
-		prg, err := env.Program(checked)
+	/* recursive evaluate */
+	for _, childVar := range triggerVar.Variables {
+		env, err = evaluateVariable(env, childVar, variables)
 		if err != nil {
-			return nil, nil, err
-		}
-		// out, details, err := prg.Eval(variables)
-		out, _, err := prg.Eval(variables)
-		if err != nil {
-			return nil, nil, err
-		}
-		klog.Infof("Eval of %s results in typename: %s, value type: %T, value: %s\n", val, out.Type().TypeName(), out.Value(), out.Value())
-
-		var ok bool
-		switch out.Type().TypeName() {
-		case TYPEINT:
-			ident := decls.NewIdent(nameVal.Name, decls.Double, nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return nil, nil, err
-			}
-			var intval int64
-			if intval, ok = out.Value().(int64); !ok {
-				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into int64", nameVal.Name, nameVal.Value)
-			}
-			variables[nameVal.Name] = float64(intval)
-		case TYPEBOOL:
-			ident := decls.NewIdent(nameVal.Name, decls.Bool, nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return nil, nil, err
-			}
-			if variables[nameVal.Name], ok = out.Value().(bool); !ok {
-				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into bool", nameVal.Name, nameVal.Value)
-			}
-		case TYPEDOUBLE:
-			ident := decls.NewIdent(nameVal.Name, decls.Double, nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return nil, nil, err
-			}
-			if variables[nameVal.Name], ok = out.Value().(float64); !ok {
-				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into float64", nameVal.Name, nameVal.Value)
-			}
-		case TYPESTRING:
-			ident := decls.NewIdent(nameVal.Name, decls.String, nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return nil, nil, err
-			}
-			if variables[nameVal.Name], ok = out.Value().(string); !ok {
-				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into string", nameVal.Name, nameVal.Value)
-			}
-		case TYPELIST:
-			ident := decls.NewIdent(nameVal.Name, decls.NewListType(decls.Any), nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return nil, nil, err
-			}
-			switch out.Value().(type) {
-			case []ref.Val:
-				variables[nameVal.Name], ok = out.Value().([]ref.Val)
-			case []interface{}:
-				variables[nameVal.Name], ok = out.Value().([]interface{})
-			default:
-				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into %T", nameVal.Name, nameVal.Value, out.Value())
-			}
-		case TYPEMAP:
-			ident := decls.NewIdent(nameVal.Name, decls.NewMapType(decls.String, decls.Any), nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return nil, nil, err
-			}
-			if variables[nameVal.Name], ok = out.Value().(map[string]interface{}); !ok {
-				return nil, nil, fmt.Errorf("Unable to cast variable %s, value %s into ma[pstring]interface{}", nameVal.Name, nameVal.Value)
-			}
-		default:
-			return nil, nil, fmt.Errorf("Unable to process variable name: %s, value: %s, type %s", nameVal.Name, nameVal.Value, out.Type().TypeName())
+			return env, err
 		}
 	}
-	return env, variables, nil
+	if klog.V(5) {
+		klog.Infof("After evaluating variable name: %s, value: %s, variables contains: %#v", triggerVar.Name, triggerVar.Value, variables)
+
+	}
+	return env, nil
+}
+
+func setOneVariable(env cel.Env, name string, val string, variables map[string]interface{}) (cel.Env, error) {
+	if name == "" {
+		/* name not set */
+		return env, nil
+	}
+	
+	val = strings.Trim(val, " ")
+
+	parsed, issues := env.Parse(val)
+	if issues != nil && issues.Err() != nil {
+		return env, fmt.Errorf("Parsing error setting variable %s to %s, error: %v", name, val, issues.Err())
+	}
+	checked, issues := env.Check(parsed)
+	if issues != nil && issues.Err() != nil {
+		return env, fmt.Errorf("CEL check error when setting variable %s to %s, error: %v", name, val, issues.Err())
+	}
+	prg, err := env.Program(checked)
+	if err != nil {
+		return env, fmt.Errorf("CEL program error when setting variable %s to %s, error: %v", name, val, err)
+	}
+	// out, details, err := prg.Eval(variables)
+	out, _, err := prg.Eval(variables)
+	if err != nil {
+		return env, fmt.Errorf("CEL Eval error when setting variable %s to %s, error: %v", name, val, err)
+	}
+
+	klog.Infof("When setting variable %s to %s, eval of value results in typename: %s, value type: %T, value: %s\n", name, val, out.Type().TypeName(), out.Value(), out.Value())
+
+	var ok bool
+	switch out.Type().TypeName() {
+	case TYPEINT:
+		var intval int64
+		if intval, ok = out.Value().(int64); !ok {
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into int64", name, val)
+		}
+		floatval := float64(intval)
+
+		ident := decls.NewIdent(name, decls.Double, nil)
+		env, err = env.Extend(cel.Declarations(ident))
+		if err != nil {
+			return env, err
+		}
+		variables[name] = floatval
+		klog.Infof("variable %s set to %v", name, floatval)
+	case TYPEBOOL:
+		boolval, ok := out.Value().(bool);
+		if ! ok {
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into bool", name, val)
+		}
+
+		ident := decls.NewIdent(name, decls.Bool, nil)
+		env, err = env.Extend(cel.Declarations(ident))
+		if err != nil {
+			return env, err
+		}
+		variables[name] = boolval
+		klog.Infof("variable %s set to %v", name, boolval)
+	case TYPEDOUBLE:
+		floatvar, ok := out.Value().(float64)
+		if !ok {
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into float64", name, val)
+		}
+
+		ident := decls.NewIdent(name, decls.Double, nil)
+		env, err = env.Extend(cel.Declarations(ident))
+		if err != nil {
+			return env, err
+		}
+		variables[name]  = floatvar
+		klog.Infof("variable %s set to %v", name, floatvar)
+	case TYPESTRING:
+		stringval, ok := out.Value().(string)
+		if !ok {
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into string", name, val)
+		}
+
+		ident := decls.NewIdent(name, decls.String, nil)
+		env, err = env.Extend(cel.Declarations(ident))
+		if err != nil {
+			return env, err
+		}
+		variables[name] = stringval
+		klog.Infof("variable %s set to %v", name, stringval)
+	case TYPELIST:
+		var listval interface{} = out.Value()
+		switch out.Value().(type) {
+		case []ref.Val:
+		case []interface{}:
+		default:
+			return  env, fmt.Errorf("Unable to cast variable %s, value %s into %T", name, val, out.Value())
+		}
+		ident := decls.NewIdent(name, decls.NewListType(decls.Any), nil)
+		env, err = env.Extend(cel.Declarations(ident))
+		if err != nil {
+			return env, err
+		}
+		variables[name] = listval
+		klog.Infof("variable %s set to %v", name, listval)
+	case TYPEMAP:
+		mapval, ok := out.Value().(map[string]interface{})
+		if !ok {
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into ma[pstring]interface{}", name, val)
+		}
+		ident := decls.NewIdent(name, decls.NewMapType(decls.String, decls.Any), nil)
+		env, err = env.Extend(cel.Declarations(ident))
+		if err != nil {
+			return  env, err
+		}
+		variables[name] = mapval
+		klog.Infof("variable %s set to %v", name, mapval)
+	default:
+		return env, fmt.Errorf("In function setOneVariable: Unable to process variable name: %s, value: %s, type %s", name, val, out.Type().TypeName())
+	}
+	return env, nil
 }
 
 func readTriggerDefinition(fileName string) (*TriggerDefinition, error) {
@@ -311,13 +440,12 @@ func readTriggerDefinition(fileName string) (*TriggerDefinition, error) {
 	return &t, err
 }
 
-
 /* Find Action for trigger. Only return the first one found*/
 func findTrigger(env cel.Env, td *TriggerDefinition, variables map[string]interface{}) (*Action, error) {
 	if td.Triggers == nil {
 		return nil, nil
 	}
-	for _, trigger := range(td.Triggers) {
+	for _, trigger := range td.Triggers {
 		action, err := evalTrigger(env, trigger, variables)
 		if action != nil || err != nil {
 			// either found a match or error
@@ -327,55 +455,68 @@ func findTrigger(env cel.Env, td *TriggerDefinition, variables map[string]interf
 	return nil, nil
 }
 
+func evalCondition(env cel.Env, when string, variables map[string]interface{}) (bool, error) {
+	if when == "" {
+		/* unconditional */
+		return true, nil
+	}
+	parsed, issues := env.Parse(when)
+	if issues != nil && issues.Err() != nil {
+		return false, fmt.Errorf("Error evaluating condition %s, error: %v", when, issues.Err())
+	}
+	checked, issues := env.Check(parsed)
+	if issues != nil && issues.Err() != nil {
+		return false, fmt.Errorf("Error parsing condition %s, error: %v", when, issues.Err())
+	}
+	prg, err := env.Program(checked)
+	if err != nil {
+		return false, fmt.Errorf("Error creating CEL program for condition %s, error: %v", when, err)
+	}
+	// out, details, err := prg.Eval(variables)
+	out, _, err := prg.Eval(variables)
+	if err != nil {
+		return false, fmt.Errorf("Error evaluating condition %s, error: %v", when, err)
+	}
+
+	var boolVal bool
+	var ok bool
+	if boolVal, ok = out.Value().(bool); !ok {
+		return false, fmt.Errorf("The when expression %s does not evaluate to a bool. Instead it is of type %T", when, out.Value())
+	}
+	return boolVal, nil
+}
+
 func evalTrigger(env cel.Env, trigger *Trigger, variables map[string]interface{}) (*Action, error) {
-	    if trigger == nil {
+	if trigger == nil {
+		return nil, nil
+	}
+
+	boolVal, err := evalCondition(env, trigger.When, variables)
+	if err != nil {
+		return nil, err
+	}
+
+	if boolVal {
+		/* trigger matched */
+		klog.Infof("Trigger %s matched", trigger.When)
+		if trigger.Action != nil {
+			return trigger.Action, nil
+		}
+
+		/* no action. Check children to see if they match */
+		if trigger.Triggers == nil {
 			return nil, nil
 		}
 
-		parsed, issues := env.Parse(trigger.When)
-		if issues != nil && issues.Err() != nil {
-			return nil, issues.Err()
-		}
-		checked, issues := env.Check(parsed)
-		if issues != nil && issues.Err() != nil {
-			return nil, issues.Err()
-		}
-		prg, err := env.Program(checked)
-		if err != nil {
-			return nil,  err
-		}
-		// out, details, err := prg.Eval(variables)
-		out, _, err := prg.Eval(variables)
-		if err != nil {
-			return nil, err
-		}
-
-		var boolVal bool
-		var ok bool
-	    if boolVal, ok = out.Value().(bool); !ok {
-            return nil, fmt.Errorf("The When expression %s does not evaluate to a bool. Instead it is of type %T", trigger.When, out.Value())
-		}
-		if boolVal {
-			/* trigger matched */
-			klog.Infof("Trigger %s matched", trigger.When)
-			if  trigger.Action != nil {
-			    return trigger.Action, nil
+		for _, trigger := range trigger.Triggers {
+			action, err := evalTrigger(env, trigger, variables)
+			if action != nil || err != nil {
+				// either found a match or error
+				return action, err
 			}
-
-            /* no action. Check children to see if they match */
-  		    if trigger.Triggers == nil {
-			    return nil, nil
-		    }
-
-  	        for _, trigger := range(trigger.Triggers) {
-		        action, err := evalTrigger(env, trigger, variables)
-		        if action != nil || err != nil {
-			        // either found a match or error
-			        return action,     err
-			    }
-		    }
 		}
-		return nil, nil
+	}
+	return nil, nil
 }
 
 func substituteTemplateFile(fileName string, variables map[string]interface{}) (string, error) {
@@ -386,10 +527,10 @@ func substituteTemplateFile(fileName string, variables map[string]interface{}) (
 	str := string(bytes)
 	klog.Infof("Before template substitution for %s: %s", fileName, str)
 	substituted, err := substituteTemplate(str, variables)
-	if (err != nil) {
-        klog.Errorf("Error in template substitution for %s: %s", fileName, err)
+	if err != nil {
+		klog.Errorf("Error in template substitution for %s: %s", fileName, err)
 	} else {
-	    klog.Infof("After template substitution for %s: %s", fileName,substituted) 
+		klog.Infof("After template substitution for %s: %s", fileName, substituted)
 	}
 	return substituted, err
 }
@@ -407,14 +548,19 @@ func substituteTemplate(templateStr string, variables map[string]interface{}) (s
 	return buffer.String(), nil
 }
 
-
 /* Create application. Assume it does not already exist */
-func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
+func createResource(resourceStr string, jobid string, dynamicClient dynamic.Interface) error {
 	if klog.V(4) {
 		klog.Infof("Creating resource %s", resourceStr)
 	}
-    var unstructuredObj = &unstructured.Unstructured{}
-	err := unstructuredObj.UnmarshalJSON([]byte(resourceStr))
+
+	/* Convert yaml to unstructured*/
+	resourceBytes, err := k8syaml.ToJSON([]byte(resourceStr))
+	if err != nil {
+		return fmt.Errorf("Unable to convert yaml resource to JSON: %v", resourceStr)
+	}
+	var unstructuredObj = &unstructured.Unstructured{}
+	err = unstructuredObj.UnmarshalJSON(resourceBytes)
 	if err != nil {
 		klog.Errorf("Unable to convert JSON %s to unstructured", resourceStr)
 		return err
@@ -424,19 +570,29 @@ func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
 	if namespace == "" {
 		return fmt.Errorf("resource %s does not contain namepsace", resourceStr)
 	}
-	gvr := schema.GroupVersionResource  { group, version, resource}
+
+	/* add labale kabanero.io/jobld = <jobid> */
+	err = setJobID(unstructuredObj, jobid)
+	if err != nil {
+		return err
+	}
+
+	if klog.V(5) {
+		klog.Infof("Resource after adding jobid: %v", unstructuredObj)
+	}
+	 gvr := schema.GroupVersionResource{group, version, resource}
 	if err == nil {
 		var intfNoNS = dynamicClient.Resource(gvr)
 		var intf dynamic.ResourceInterface
-        intf = intfNoNS.Namespace(namespace)
+		intf = intfNoNS.Namespace(namespace)
 
 		_, err = intf.Create(unstructuredObj, metav1.CreateOptions{})
 		if err != nil {
-			klog.Errorf("Unable to create resource %s/%s error: %s", namespace, name , err)
+			klog.Errorf("Unable to create resource %s/%s error: %s", namespace, name, err)
 			return err
 		}
 	} else {
-		klog.Errorf("Unable to create resource /%s.  Error: %s",  resourceStr, err)
+		klog.Errorf("Unable to create resource /%s.  Error: %s", resourceStr, err)
 		return fmt.Errorf("Unable to get GVR for resource %s, error: %s", resourceStr, err)
 	}
 	if klog.V(2) {
@@ -444,6 +600,36 @@ func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
 	}
 	return nil
 }
+
+func setJobID(unstructuredObj *unstructured.Unstructured, jobid string) error {
+	var objMap = unstructuredObj.Object
+	metadataObj, ok := objMap[METADATA]
+	if !ok {
+		return fmt.Errorf("Resource has no metadata: %v", unstructuredObj)
+	}
+	var metadata map[string]interface{}
+	metadata, ok = metadataObj.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("Resource metadata is not a map: %v", unstructuredObj)
+	}
+
+	labelsObj, ok := metadata[LABELS]
+	var labels map[string]interface{}
+	if !ok {
+		/* create new label */
+		labels = make(map[string]interface{})
+		metadata[LABELS] = labels
+	} else {
+		labels, ok = labelsObj.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("Resource labels is not a map: %v", labels)
+		}
+	}
+	labels["kabanero.io/jobid"] = jobid
+	
+	return nil
+}
+
 
 /* Return GVR, namespace, name, ok */
 func getGroupVersionResourceNamespaceName(unstructuredObj *unstructured.Unstructured) (string, string, string, string, string, error) {
@@ -459,10 +645,10 @@ func getGroupVersionResourceNamespaceName(unstructuredObj *unstructured.Unstruct
 
 	components := strings.Split(apiVersion, "/")
 	var group, version string
-	if len(components) == 1{
+	if len(components) == 1 {
 		group = ""
 		version = components[0]
-	} else if len(components) == 2{
+	} else if len(components) == 2 {
 		group = components[0]
 		version = components[1]
 	} else {
@@ -470,7 +656,7 @@ func getGroupVersionResourceNamespaceName(unstructuredObj *unstructured.Unstruct
 	}
 
 	kindObj, ok := objMap[KIND]
-	if ! ok {
+	if !ok {
 		return "", "", "", "", "", fmt.Errorf("Resource has invalid kind: %s", unstructuredObj)
 	}
 	kind, ok := kindObj.(string)
@@ -483,14 +669,14 @@ func getGroupVersionResourceNamespaceName(unstructuredObj *unstructured.Unstruct
 	var metadata map[string]interface{}
 	if !ok {
 		return "", "", "", "", "", fmt.Errorf("Resource has no metadata: %s", unstructuredObj)
-	} 
+	}
 	metadata, ok = metadataObj.(map[string]interface{})
 	if !ok {
 		return "", "", "", "", "", fmt.Errorf("Resource metadata is not a map: %s", unstructuredObj)
 	}
 
 	nameObj, ok := metadata[NAME]
-    if !ok {
+	if !ok {
 		return "", "", "", "", "", fmt.Errorf("Resource has no name: %s", unstructuredObj)
 	}
 	name, ok := nameObj.(string)
@@ -501,21 +687,44 @@ func getGroupVersionResourceNamespaceName(unstructuredObj *unstructured.Unstruct
 	nsObj, ok := metadata[NAMESPACE]
 	if !ok {
 		return "", "", "", "", "", fmt.Errorf("Resource has no namespace: %s", unstructuredObj)
-	} 
+	}
 	namespace, ok := nsObj.(string)
 	if !ok {
 		return "", "", "", "", "", fmt.Errorf("Resource namespace not a string: %s", unstructuredObj)
 	}
-    return group, version, resource, namespace, name, nil
+	return group, version, resource, namespace, name, nil
 }
 
 func kindToPlural(kind string) string {
 	lowerKind := strings.ToLower(kind)
 	if index := strings.LastIndex(lowerKind, "ss"); index == len(lowerKind)-2 {
-			return lowerKind + "es"
+		return lowerKind + "es"
 	}
 	if index := strings.LastIndex(lowerKind, "cy"); index == len(lowerKind)-2 {
-			return lowerKind[0:index] + "cies"
+		return lowerKind[0:index] + "cies"
 	}
 	return lowerKind + "s"
+}
+
+/* tracking time for timestamp */
+var lastTime time.Time = time.Now().UTC()
+var mutex = &sync.Mutex{}
+/* 
+Get timestamp. Timestamp format is UTC time expressed as:
+      YYYYMMDDHHMMSSL, where L is last digits in multiples of 1/10 second.
+WARNING: This function may sleep up to 0.1 second per request if there are too many concurent requests
+*/
+func getTimestamp() string {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	now := time.Now().UTC()
+	for now.Sub(lastTime).Nanoseconds() < 100000000 {
+            // < 0.1 since last time. Sleep for at least 0.1 second
+            time.Sleep(time.Millisecond*time.Duration(100))
+            now = time.Now().UTC()
+	}
+	lastTime = now
+
+	return fmt.Sprintf("%04d%02d%02d%02d%02d%02d%01d", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(),now.Second(), now.Nanosecond()/100000000)
 }

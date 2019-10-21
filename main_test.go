@@ -16,10 +16,10 @@ limitations under the License.
 package main
 
 import (
-//    "fmt"
-    "testing"
+	//    "fmt"
+	"testing"
 )
 
 /* Empty test just so we can get unit test into the build*/
-func TestEmpty( *testing.T) {
+func TestEmpty(*testing.T) {
 }

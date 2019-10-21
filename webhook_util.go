@@ -17,25 +17,26 @@ limitations under the License.
 package main
 
 import (
+	"archive/tar"
 	"bufio"
-	"io/ioutil"
+	"compress/gzip"
 	"fmt"
+	"gopkg.in/yaml.v2"
 	"io"
-	"net/http"
+	"io/ioutil"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/klog"
+	"net/http"
 	"os"
 	"path/filepath"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"gopkg.in/yaml.v2"
 	"strings"
-	"archive/tar"
-	"compress/gzip"
 )
 
 /* constants*/
 const (
 	TRIGGERS = "triggers"
 )
+
 func readFile(fileName string) ([]byte, error) {
 	ret := make([]byte, 0)
 	file, err := os.Open(fileName)
@@ -74,14 +75,14 @@ func getHTTPURLReaderCloser(url string) (io.ReadCloser, error) {
 	}
 
 	if response.StatusCode == http.StatusOK {
-	    return response.Body, nil
-	} 
-    return nil, fmt.Errorf("Unable to read from url %s, http status: %s", url, response.Status)
+		return response.Body, nil
+	}
+	return nil, fmt.Errorf("Unable to read from url %s, http status: %s", url, response.Status)
 }
 
 /* Read remote file from URL and return bytes */
 func readHTTPURL(url string) ([]byte, error) {
-	readCloser, err := getHTTPURLReaderCloser(url) 
+	readCloser, err := getHTTPURLReaderCloser(url)
 	if err != nil {
 		return nil, err
 	}
@@ -90,19 +91,19 @@ func readHTTPURL(url string) ([]byte, error) {
 	return bytes, err
 }
 
-func unmarshallKabaneroIndex(bytes []byte) (map[string]interface{}, error) {
+func yamlToMap(bytes []byte) (map[string]interface{}, error) {
 	var myMap map[string]interface{}
 	err := yaml.Unmarshal(bytes, &myMap)
 	if err != nil {
 		return nil, err
-	} 
+	}
 	return myMap, nil
 }
 
 /* Get the URL of where the trigger is stored*/
 func getTriggerURL(collection map[string]interface{}) (string, error) {
 	triggersObj, ok := collection[TRIGGERS]
-    if !ok{
+	if !ok {
 		return "", fmt.Errorf("collection does not contain triggers: section")
 	}
 	triggersArray, ok := triggersObj.([]interface{})
@@ -121,17 +122,16 @@ func getTriggerURL(collection map[string]interface{}) (string, error) {
 		}
 		url, ok := urlObj.(string)
 		if !ok {
-			return "", fmt.Errorf("triggers section at index %d url is not a string: %s",index, url)
+			return "", fmt.Errorf("triggers section at index %d url is not a string: %s", index, url)
 		}
 		retURL = url
 	}
 
 	if retURL == "" {
-        return "", fmt.Errorf("Unable to find url from triggers section")
+		return "", fmt.Errorf("Unable to find url from triggers section")
 	}
 	return retURL, nil
 }
-
 
 /* Merage a directory path with a relative path. Return error if the rectory not a prefix of the merged path after the merge  */
 func mergePathWithErrorCheck(dir string, toMerge string) (string, error) {
@@ -151,7 +151,7 @@ func mergePathWithErrorCheck(dir string, toMerge string) (string, error) {
 }
 
 /* gunzip and then untar into a directory */
-func gUnzipUnTar(readCloser io.ReadCloser, dir string)  error {
+func gUnzipUnTar(readCloser io.ReadCloser, dir string) error {
 	defer readCloser.Close()
 
 	gzReader, err := gzip.NewReader(readCloser)
@@ -163,7 +163,7 @@ func gUnzipUnTar(readCloser io.ReadCloser, dir string)  error {
 		header, err := tarReader.Next()
 
 		if err == io.EOF {
-            break
+			break
 		}
 
 		if err != nil {
@@ -178,8 +178,8 @@ func gUnzipUnTar(readCloser io.ReadCloser, dir string)  error {
 			return err
 		}
 		fileInfo := header.FileInfo()
-		mode := fileInfo.Mode();
-        if mode.IsRegular() {
+		mode := fileInfo.Mode()
+		if mode.IsRegular() {
 			fileToCreate, err := os.OpenFile(dest, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
 			if err != nil {
 				return fmt.Errorf("Unable to create file %s, error: %s", dest, err)
@@ -194,48 +194,47 @@ func gUnzipUnTar(readCloser io.ReadCloser, dir string)  error {
 			}
 		} else if mode.IsDir() {
 			err = os.MkdirAll(dest, 0755)
-			if  err != nil {
+			if err != nil {
 				return fmt.Errorf("Unable to make directory %s, error:  %s", dest, err)
 			}
 			klog.Infof("Created subdirectory %s\n", dest)
 		} else {
-			return fmt.Errorf("unsupported file type within tar archive: file within tar: %s, fiele type: %v",header.Name, mode)
-		}	
+			return fmt.Errorf("unsupported file type within tar archive: file within tar: %s, fiele type: %v", header.Name, mode)
+		}
 
 	}
 	return nil
 }
 
-
 /* Download the trigger.tar.gz and unpack into the directory
- kabaneroIndexUrl: URL that serves kabanero-index.yaml
- dir: directory to unpack the trigger.tar.gz
+kabaneroIndexUrl: URL that serves kabanero-index.yaml
+dir: directory to unpack the trigger.tar.gz
 */
-func downloadTrigger(kabaneroIndexURL string, dir string ) error {
-   if klog.V(5) {
-       klog.Infof("Entering downloadTrigger kabaneroIndexURL: %s, directory to store trigger: %s", kabaneroIndexURL, dir)
-       defer klog.Infof("Leaving downloadTrigger kabaneroIndexURL: %s, directory to store trigger: %s", kabaneroIndexURL, dir)
-   }
-   kabaneroIndexBytes, err :=  readHTTPURL(kabaneroIndexURL) 
-   if err != nil {
-	   return err
-   }
-   if klog.V(5) {
-       klog.Infof("Retrieved kabanero index file: %s", string(kabaneroIndexBytes))
-   }
-   kabaneroIndexMap, err := unmarshallKabaneroIndex(kabaneroIndexBytes)
-   if err != nil {
-	   return err
-   }
-   triggerURL, err := getTriggerURL(kabaneroIndexMap) 
-   if err != nil {
-	   return err
-   }
-   triggerReadCloser , err := getHTTPURLReaderCloser(triggerURL )
-   if err != nil {
-	   return err
-   }
+func downloadTrigger(kabaneroIndexURL string, dir string) error {
+	if klog.V(5) {
+		klog.Infof("Entering downloadTrigger kabaneroIndexURL: %s, directory to store trigger: %s", kabaneroIndexURL, dir)
+		defer klog.Infof("Leaving downloadTrigger kabaneroIndexURL: %s, directory to store trigger: %s", kabaneroIndexURL, dir)
+	}
+	kabaneroIndexBytes, err := readHTTPURL(kabaneroIndexURL)
+	if err != nil {
+		return err
+	}
+	if klog.V(5) {
+		klog.Infof("Retrieved kabanero index file: %s", string(kabaneroIndexBytes))
+	}
+	kabaneroIndexMap, err := yamlToMap(kabaneroIndexBytes)
+	if err != nil {
+		return err
+	}
+	triggerURL, err := getTriggerURL(kabaneroIndexMap)
+	if err != nil {
+		return err
+	}
+	triggerReadCloser, err := getHTTPURLReaderCloser(triggerURL)
+	if err != nil {
+		return err
+	}
 
-   err = gUnzipUnTar(triggerReadCloser, dir)
-   return err
+	err = gUnzipUnTar(triggerReadCloser, dir)
+	return err
 }

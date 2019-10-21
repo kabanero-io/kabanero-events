@@ -19,47 +19,46 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"net/http"
-	"io/ioutil"
-	"os"
-	"os/signal"
-	"path/filepath"
-	"runtime"
-	"strings"
-	"syscall"
 	"fmt"
+	// ghw "gopkg.in/go-playground/webhooks.v3/github"
+	"io/ioutil"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/discovery" 
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 	"k8s.io/klog"
-	ghw "gopkg.in/go-playground/webhooks.v3/github"
+//	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"syscall"
 )
 
 /* useful constants */
 const (
-	kubeAPIURL = "http://localhost:9080"
+	kubeAPIURL       = "http://localhost:9080"
 	DEFAULTNAMESPACE = "kabanero"
-	KUBENAMESPACE = "KUBE_NAMESPACE"
-	KABANEROINDEXURL= "KABANERO_INDEX_URL" // use the given URL to fetch kabaneroindex.yaml
+	KUBENAMESPACE    = "KUBE_NAMESPACE"
+	KABANEROINDEXURL = "KABANERO_INDEX_URL" // use the given URL to fetch kabaneroindex.yaml
 )
 
-
 var (
-	masterURL  string        // URL of Kube master
-	kubeconfig string        // path to kube config file. default <home>/.kube/config
-	klogFlags  *flag.FlagSet // flagset for logging
-	gitHubListener *GitHubListener // Listens for and handles GH events
-	kubeClient *kubernetes.Clientset
-	discClient  *discovery.DiscoveryClient
-	dynamicClient dynamic.Interface
+	masterURL        string          // URL of Kube master
+	kubeconfig       string          // path to kube config file. default <home>/.kube/config
+	klogFlags        *flag.FlagSet   // flagset for logging
+	gitHubListener   *GitHubListener // Listens for and handles GH events
+	kubeClient       *kubernetes.Clientset
+	discClient       *discovery.DiscoveryClient
+	dynamicClient    dynamic.Interface
 	webhookNamespace string
-	triggerProc *triggerProcessor
+	triggerProc      *triggerProcessor
 )
 
 func init() {
@@ -79,8 +78,8 @@ func main() {
 
 	flag.Parse()
 
-	var cfg *rest.Config
 	var err error
+	var cfg *rest.Config
 	if strings.Compare(masterURL, "") != 0 {
 		// running outside of Kube cluster
 		klog.Infof("starting Kabanero webhook outside cluster\n")
@@ -113,19 +112,19 @@ func main() {
 
 	/* Get namespace of where we are installed */
 	webhookNamespace = os.Getenv(KUBENAMESPACE)
-    if webhookNamespace == "" {
-            webhookNamespace = DEFAULTNAMESPACE
+	if webhookNamespace == "" {
+		webhookNamespace = DEFAULTNAMESPACE
 	}
 
-	kabaneroIndexURL := os.Getenv(KABANEROINDEXURL) 
+	kabaneroIndexURL := os.Getenv(KABANEROINDEXURL)
 	if kabaneroIndexURL == "" {
 		// not overriden, use the one in the kabanero CRD
-		kabaneroIndexURL, err = getKabaneroIndexURL(dynamicClient, webhookNamespace )
+		kabaneroIndexURL, err = getKabaneroIndexURL(dynamicClient, webhookNamespace)
 		if err != nil {
 			klog.Fatal(fmt.Errorf("Unable to get kabanero index URL from kabanero CRD. Error: %s", err))
 		}
 	} else {
-        klog.Infof("Using value of KABANERO_INDEX_URL environment variable to fetch kabanero index from: %s", kabaneroIndexURL)
+		klog.Infof("Using value of KABANERO_INDEX_URL environment variable to fetch kabanero index from: %s", kabaneroIndexURL)
 	}
 
 	/* Download the trigger into temp directory */
@@ -135,7 +134,7 @@ func main() {
 	}
 	defer os.RemoveAll(dir)
 
-	err = downloadTrigger( kabaneroIndexURL, dir ) 
+	err = downloadTrigger(kabaneroIndexURL, dir)
 	if err != nil {
 		klog.Fatal(fmt.Errorf("Unable to download trigger pointed by kabanero_index_url at: %s, error: %s", kabaneroIndexURL, err))
 	}
@@ -158,24 +157,44 @@ func main() {
 	//}
 
 	// Handle GitHub events
-	if gitHubListener, err = NewGitHubEventListener(); err != nil {
+    err = newListener()
+	if err != nil {
 		klog.Fatal(err)
 	}
-
-	http.HandleFunc("/", func (w http.ResponseWriter, r *http.Request) {
-		payload, err := gitHubListener.ParseEvent(r)
-
-		if err == nil {
-			switch payload.(type) {
-			case ghw.PushPayload:
-				klog.Infof("Received Push event:\n%v\n", payload)
-			}
-		} else {
-			klog.Error(err)
-		}
-	})
-
-	klog.Fatal(http.ListenAndServe(":8080", nil))
+	
+//	if gitHubListener, err = NewGitHubEventListener(dynamicClient); err != nil {
+//		klog.Fatal(err)
+//	}
+//
+//	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+//		payload, err := gitHubListener.ParseEvent(r)
+//
+//		if err == nil {
+//			/*
+//				switch payload.(type) {
+//				case RepositoryEvent:
+//					// TODO: The type switch isn't working correctly for some reason. Fix.
+//					klog.Infof("Received Repository event:\n%v\n", payload)
+//				}
+//			*/
+//
+//			klog.Infof("Received Repository event:\n%v\n", payload)
+//			// TODO: Fix this mismatch
+//			buffer, err := json.Marshal(payload)
+//			if err == nil {
+//				var f interface{}
+//				err := json.Unmarshal(buffer, &f)
+//				if err == nil {
+//					message := f.(map[string]interface{})
+//					triggerProc.processMessage(message)
+//				}
+//			}
+//		} else {
+//			klog.Error(err)
+//		}
+//	})
+//
+//	klog.Fatal(http.ListenAndServe(":8080", nil))
 
 	select {}
 }
