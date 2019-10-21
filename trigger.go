@@ -57,6 +57,7 @@ const (
 	TYPELIST   = "list"
 	TYPEMAP    = "map"
 	WEBHOOK    = "webhook"
+	CONTROLNAMESPACE =	"controlNamespace"
 )
 
 /*

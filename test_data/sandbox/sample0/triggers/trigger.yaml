@@ -1,6 +1,6 @@
 variables:
   - name: buildNamespace
-    value: ' "kabanero.controlNamespace" '
+    value: ' kabanero.controlNamespace '
   - name: buildRegistryNamespace
     value: ' "kabanero" '
   - name: serviceAccount
