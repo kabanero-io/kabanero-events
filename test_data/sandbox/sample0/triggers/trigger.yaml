@@ -1,13 +1,24 @@
 variables:
-  - name: kubeNamespace
+  - name: buildNamespace
+    value: ' "kabanero.controlNamespace" '
+  - name: buildRegistryNamespace
     value: ' "kabanero" '
   - name: serviceAccount
     value: ' "appsody-sa" '
-  - name: registry
-    value: ' "docker-registry.default.svc:5000/" + kubeNamespace +  "/" + event.repository.name '
+  - name: buildRegistry
+    value: ' "docker-registry.default.svc:5000/" + buildRegistryNamespace +  "/" + event.repository.name '
+  - when: 'has(kabanero.collectionID)'
+    name: appsodyCollectionID
+    value: 'kabanero.collectionID'
   - when: 'kabanero.eventType=="Repository"'
-    name: kubeNameSuffix
-    value: 'event.repository.owner.login + "-" + event.repository.name + "-" + kabanero.jobid'
+    - variables:
+      - name: kubeNameSuffix
+        value: 'event.repository.owner.login + "-" + event.repository.name + "-" + kabanero.jobid'
+      - name: cloneURL
+        value: 'event.repository.clone_url'
+      - when: 'kabanero.ref[1] == "heads" '
+        name: buildBranch
+        value: 'kabanero.ref[2]'
 triggers:
   - when: 'has(kabanero.collectionID)' # appsody build
     triggers:
