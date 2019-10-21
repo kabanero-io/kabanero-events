@@ -6,7 +6,7 @@ metadata:
 spec:
   params:
   - name: revision
-    value: {{.bulidBranch}}
+    value: {{.buildBranch}}
   - name: url
     value: {{.cloneURL}}
   type: git
