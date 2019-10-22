@@ -139,7 +139,7 @@ func main() {
 		klog.Fatal(fmt.Errorf("Unable to download trigger pointed by kabanero_index_url at: %s, error: %s", kabaneroIndexURL, err))
 	}
 
-	triggerFileName := filepath.Join(dir, "trigger.yaml")
+	triggerFileName := filepath.Join(dir, "eventTriggers.yaml")
 	triggerProc = &triggerProcessor{}
 	err = triggerProc.initialize(triggerFileName)
 	if err != nil {
