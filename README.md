@@ -1,4 +1,5 @@
 # kabanero-webhook
+[![Build Status](https://travis-ci.org/kabanero-io/kabanero-webhook.svg?branch=master)](https://travis-ci.org/kabanero-io/kabanero-webhook)
 
 ## Table of Contents
 * [Introduction](#Introduction)   
@@ -99,5 +100,4 @@ oc new-app kabanero/webhook -e KABANERO_INDEX_URL=<url>
 
 <a name="Functional_Spec"></a>
 ## Functional Specifications
-
 **Note:** The event trigger portion of this specification shall be moved to the kabanero-event repository when the implementation is separated into distinct web hook and event components.
