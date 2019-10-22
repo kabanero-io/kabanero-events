@@ -2,11 +2,11 @@ apiVersion: tekton.dev/v1alpha1
 kind: PipelineResource
 metadata:
   name: git-{{.kubeNameSuffix}}
-  namespace: {{.kubeNamespace}}
+  namespace: {{.buildNamespace}}
 spec:
   params:
   - name: revision
-    value: {{index .kabanero.ref 2}}
+    value: {{.buildBranch}}
   - name: url
-    value: {{.event.repository.url}}
+    value: {{.cloneURL}}
   type: git

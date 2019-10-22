@@ -1,7 +1,7 @@
 variabbles:
   - name: name1
     value: val1
-triggers:
+eventTriggers:
   - when: cond0
     action:
         applyResources:

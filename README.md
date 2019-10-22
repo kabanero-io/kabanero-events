@@ -32,34 +32,72 @@ To build in a docker container:
 To set up a local build environment:
 - Install `go`
 - Install `dep` tool
+- Install `golint` tool
 - Clone this repository into $GOPATH/src/github.com/kabanero-webhook
 - Run `dep ensure --vendor-only` to generate the prerequisite vendor files.
 
 #### Local development and unit test
 
+##### Building Locally
+
 Run `go test` to run unit test
 
-Run `go build` to build the executable `kabanero-webhook`. To test outside of of a pod:
-- Ensure you have kubectl configured and it is running correctly.
-- `kabanero-webhook -master <path to openshift API server> -v <n>`,  where the -v option is the client-go logging verbosity. 
+Run `go build` to build the executable `kabanero-webhook`. 
 
 If you import new prerequisites in your source code:
 - run `dep ensure` to regenerate the vendor directory, and `Gopkg.lock`, `Gopkg.toml`.  
 - Re-run both the unit test and buld.
-- Push the updated `Gopkg.lock` and `Gopkg.toml`. 
+- Run `golint` to ensure it's lint free.
+- Push the updated `Gopkg.lock` and `Gopkg.toml` if any. 
 
-#### Running in OpenShift
-Running Kabanero Webhook in OpenShift can be done using `oc new-app` like so:
-```bash
-oc new-app kabanero/webhook -e GH_USER=<github-username> -e GH_TOKEN=<github-token> -e GH_URL=https://api.github.ibm.com
+##### Testing with an Existing Kabanero Collection
+
+To test locally outside of of a pod with existing event triggers in a collection:
+- Install and configure Kabanero foundation: `https://kabanero.io/docs/ref/general/installing-kabanero-foundation.html`. Also go through the optional section to make sure you can trigger a Tekton pipeline .
+- Ensure you have kubectl configured and you are able to connect to an Openshift API Server.
+- `kabanero-webhook -master <path to openshift API server> -v <n>`,  where the -v option is the client-go logging verbosity. 
+- To test webhook, create a new webhook to point to your local machine's host and port. For example, `https://my-host:9080/webhook`
+
+##### Testing with Event Triggers in a sandbox
+
+The subdirectories under the directory `test_data/sandbox` contains sandboxes. For example, `test_data/sandbox/sample0` is a sandbox. You may create additional sandboxes that conform the same directory structure. 
+
+To set up your sandbox: 
+- Create a branch or clone of this repository.
+- Make a copy of `sample0` directory into a different directory. For example, `sample1`.
+- Modify or create one or more subdirectories under `sample1`, each containing Kubernetes resources to be applied when an event trigger fires.
+- Create your `sample1.tar.gz` file: change directory to `sample1/triggers` and run the command `tar -cvzf ../sample1.tar.gz *`.  Push the changes.
+- Edit kabanero-index.yaml and modify the url under the triggers section to point to your URL of your sample1.tar.gz. Push the changes to your branch. For example:
+```
+triggers:
+ - description: triggers for this collection
+   url: https://raw.githubusercontent.com/<owner>/kabanero-webhook/<barnch>/test_data/sandbox/sample1/sample1.tar.gz
 ```
 
-The environment variables `GH_USER` and `GH_TOKEN` are necessary at the moment to be able to use GitHub's API. This
-configuration will eventually be read from a Kubernetes Secret.
+To set up the kabanero-webhook to use the sandbox:
+- From the browser, browse to kabanero-index.yaml file **in your branch**.
+- Click on `raw` button and copy the URL in the browser. 
+- Export a new environment variable: `export KABANERO_INDEX_URL=<url>`. For example, `export KABANERO_INDEX_URL=https://raw.githubusercontent.com/<owner>/kabanero-webhook/<branch>/test_data/sandbox/sample1/kabanero-index.yaml`
 
-The environment variable `GH_URL` is only necessary for GitHub Enterprise. It should be set to your GHE's API URL.
+To run the kabanero-webhook:
+- Ensure you have set up the secret that contains the personal access token. See functional specification below.
+- Ensure you can run `kubectl` against your Kubernetes API server.
+- Run `kabanero-webhook -master <API server URL> -v <n>`, where n is the Kubernetes log level.
+
+To update your sandbox:
+- Make changes to the files under the `sample1/triggers` subdirectory
+- Re-create `sample1.tar.gz`
+- Push the changes to your branch
+- Restart kabanero-webhook 
+
+
+#### Running in OpenShift
+
+Running a temporary copy of Kabanero Webhook in OpenShift can be done using `oc new-app` like so:
+```bash
+oc new-app kabanero/webhook -e KABANERO_INDEX_URL=<url> 
+```
 
 <a name="Functional_Spec"></a>
 ## Functional Specifications
-
-**TBD**
+**Note:** The event trigger portion of this specification shall be moved to the kabanero-event repository when the implementation is separated into distinct web hook and event components.
