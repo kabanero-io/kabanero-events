@@ -199,7 +199,6 @@ func downloadAppsodyConfig(owner, repository, githubURL, user, token string, isE
 
 	context := context.Background()
 
-	/* TODO: add SSL */
     tp := github.BasicAuthTransport{
        Username: user,
        Password: token,
@@ -234,18 +233,30 @@ func downloadAppsodyConfig(owner, repository, githubURL, user, token string, isE
 	if  err != nil {
 		return "", "", "", false, err
 	}
-	
-	/* stack: kabanero/nodejs-express:0.2 */
-	bufStr := string(buf)
-	components := strings.Split(bufStr, ":")
-	if len(components) == 3 {
-		prefixName := strings.Trim(components[1], " ")
+
+	/* look in the yaml for: stack: kabanero/nodejs-express:0.2 */
+    appsodyConfigMap, err := yamlToMap(buf);
+    if err != nil {
+        return "", "", "", false, err
+    }
+    stack, ok := appsodyConfigMap["stack"]
+    if !ok {
+	   return "", "", "", false, fmt.Errorf(".appsody-config.yaml does not contain stack")
+    }
+    stackStr, ok := stack.(string)
+    if !ok {
+	   return "", "", "", false, fmt.Errorf(".appsody-config.yaml stack: %s is not a string", stack)
+    }
+
+	components := strings.Split(stackStr, ":")
+	if len(components) == 2 {
+		prefixName := strings.Trim(components[0], " ")
 		prefixNameArray := strings.Split(prefixName, "/")
 		if len(prefixNameArray) == 2 {
-			return prefixNameArray[0], prefixNameArray[1], components[2], true, nil
-		} 
+			return prefixNameArray[0], prefixNameArray[1], components[1], true, nil
+		}
 	} 
-	return "", "", "", false, fmt.Errorf(".appsody-config.yaml contains %s.  It is not of the format stacK: prefix/name:version", bufStr)
+	return "", "", "", false, fmt.Errorf(".appsody-config.yaml contains %v.  It is not of the format stacK: prefix/name:version", stackStr)
 
 }
 
