@@ -85,7 +85,7 @@ type Action struct {
 }
 
 /*
-Trigger as used in the trigger file
+EventTrigger as used in the trigger file
 */
 type EventTrigger struct {
 	When     string     `yaml:"when"`
@@ -94,7 +94,7 @@ type EventTrigger struct {
 }
 
 /*
-TriggerDefinition as used in the trigger file
+EventTriggerDefinition as used in the trigger file
 */
 type EventTriggerDefinition struct {
 	Variables []*Variable `yaml:"variables,omitempty"`
