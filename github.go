@@ -81,7 +81,7 @@ func NewGitHubEventListener(dynamicClient dynamic.Interface) (*GitHubListener, e
 	token := strings.TrimSpace(os.Getenv("GH_TOKEN"))
 
 	var err error
-	username, token, err = getURLAPIToken(dynamicClient, webhookNamespace, githubURL)
+	username, token, _, err = getURLAPIToken(dynamicClient, webhookNamespace, githubURL)
 
 	if err != nil {
 		return nil, err

@@ -66,8 +66,10 @@ data:
  If the url in the secret is a prefix of repoURL, and username and token are defined, then return the user and token.
  Return user, token, error.
  TODO: Change to controller pattern and cache the secrets.
+
+Return: username, token, secret name, error
 */
-func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, error) {
+func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, string, error) {
 	gvr := schema.GroupVersionResource{
 		Group:    "",
 		Version:  V1,
@@ -82,11 +84,31 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 	var err error
 	unstructuredList, err = intf.List(metav1.ListOptions{})
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	for _, unstructuredObj := range unstructuredList.Items {
 		var objMap = unstructuredObj.Object
+
+		metadataObj, ok := objMap[METADATA]
+		if !ok {
+			continue
+		}
+
+		metadata, ok := metadataObj.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+        nameObj, ok := metadata["name"]
+        if !ok {
+            continue
+        }
+        name, ok := nameObj.(string)
+        if !ok {
+            continue
+        } 
+
 		dataMapObj, ok := objMap[DATA]
 		if !ok {
 			continue
@@ -107,7 +129,7 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 		}
 		decodedURLBytes, err := base64.StdEncoding.DecodeString(url)
 		if err != nil {
-			return "", "", err
+			return "", "", "", err
 		}
 
 		decodedURL := string(decodedURLBytes)
@@ -136,16 +158,16 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 
 		decodedUserName, err := base64.StdEncoding.DecodeString(username)
 		if err != nil {
-			return "", "", err
+			return "", "", "", err
 		}
 
 		decodedToken, err := base64.StdEncoding.DecodeString(token)
 		if err != nil {
-			return "", "", err
+			return "", "", "", err
 		}
-		return string(decodedUserName), string(decodedToken), nil
+		return string(decodedUserName), string(decodedToken), name,  nil
 	}
-	return "", "", fmt.Errorf("Unable to find API token for url: %s", repoURL)
+	return "", "", "", fmt.Errorf("Unable to find API token for url: %s", repoURL)
 }
 
 /* Get the URL to kabanero-index.yaml

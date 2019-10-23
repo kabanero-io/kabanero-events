@@ -37,23 +37,23 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
     header := req.Header
 	klog.Infof("Recevied request. Header: %v", header)
 
-    initialVariables := make(map[string]interface{})
-	initialVariables["eventType"] = "Repository"
 	reposiotryEventHeader, ok := header[http.CanonicalHeaderKey("x-github-event")]
 	if !ok {
-		klog.Errorf("header does not contain x-github-event. Skipping")
+		klog.Errorf("header does not contain x-github-event. Skipping. Header content: %v", header)
 		return
 	}
+    initialVariables := make(map[string]interface{})
+	initialVariables["eventType"] = "Repository"
 	initialVariables["repositoryEvent"] = reposiotryEventHeader[0]
 	initialVariables["repositoryType"] = "github"
 	initialVariables[CONTROLNAMESPACE] = webhookNamespace
 
 	hostHeader, isEnterprise := header[http.CanonicalHeaderKey("x-github-enterprise-host")]
+    var host string
 	if !isEnterprise {
-		klog.Errorf("header does not contain x-github-enterprise-host. Skipping")
-		return
+        host = "github.com"
 	} 
-	host := hostHeader[0]
+	host = hostHeader[0]
 
 	var body io.ReadCloser = req.Body
 
@@ -78,11 +78,12 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-    user, token , err := getURLAPIToken(dynamicClient, webhookNamespace, htmlURL )
+    user, token , secretName, err := getURLAPIToken(dynamicClient, webhookNamespace, htmlURL )
 	if err != nil {
 		klog.Errorf("Unable to get user/token secrets for URL %v", htmlURL);
 		return
 	}
+	initialVariables["accessTokenSecretName"] = secretName 
 
 	githubURL := "https://" + host
 	collectionPrefix, collectionID, collectionVersion, found, err := downloadAppsodyConfig(owner, name, githubURL, user, token, isEnterprise)
@@ -122,8 +123,8 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 func newListener() error{
 
     http.HandleFunc("/webhook", listenerHandler)
-	klog.Infof("Starting listener on port 9080");
-    err := http.ListenAndServe(":9080", nil)
+	klog.Infof("Starting listener on port 9443");
+    err := http.ListenAndServe(":9443", nil)
 	return err
 }
 
