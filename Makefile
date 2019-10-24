@@ -1,4 +1,4 @@
-IMAGE ?= kabanero-io/kabanero-webhook
+IMAGE ?= kabanero/kabanero-webhook
 
 .PHONY: build push-image
 

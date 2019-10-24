@@ -69,4 +69,4 @@ EXPOSE 8080
 
 # run with log level 2
 # Note liveness/readiness probe depends on './webhook'
-CMD ./kabanero-webhook -v 2
+CMD ./kabanero-webhook -v 5

@@ -31,6 +31,9 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types/ref"
+	"github.com/google/cel-go/common/types"
+	"github.com/google/cel-go/interpreter/functions"
+	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 
@@ -97,6 +100,7 @@ type EventTrigger struct {
 EventTriggerDefinition as used in the trigger file
 */
 type EventTriggerDefinition struct {
+	Dryrun   *bool       `yaml:"dryrun,omitempty"`
 	Variables []*Variable `yaml:"variables,omitempty"`
 	EventTriggers  []*EventTrigger  `yaml:"eventTriggers,omitempty"`
 }
@@ -179,14 +183,18 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, ) err
 		substituted = append(substituted, after)
 	}
 
-	/* Apply the files */
-	for _, resource:= range substituted {
-		if klog.V(5) {
-			klog.Infof("applying resource: %s", resource)
-		}
-		err = createResource(resource, jobid, dynamicClient)
-		if err != nil {
-			return err
+    if tp.triggerDef.Dryrun != nil && *tp.triggerDef.Dryrun {
+		klog.Infof("triggerProcessor: dryrun is set. Resources not created")
+    } else {
+		/* Apply the files */
+		for _, resource:= range substituted {
+			if klog.V(5) {
+				klog.Infof("applying resource: %s", resource)
+			}
+			err = createResource(resource, jobid, dynamicClient)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -214,8 +222,10 @@ func initializeCELEnv(td *EventTriggerDefinition, message map[string]interface{}
 	}
 	variables := make(map[string]interface{})
 
-	/* initilize empty CEL environment */
-	env, err := cel.NewEnv()
+	/* initilize empty CEL environment with additional functions */
+	additionalFuncs := getAdditionalCELFuncDecls()
+	klog.Infof("Additional Func Decls: %v", additionalFuncs)
+	env, err := cel.NewEnv(getAdditionalCELFuncDecls() )
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -330,7 +340,7 @@ func setOneVariable(env cel.Env, name string, val string, variables map[string]i
 	if issues != nil && issues.Err() != nil {
 		return env, fmt.Errorf("CEL check error when setting variable %s to %s, error: %v", name, val, issues.Err())
 	}
-	prg, err := env.Program(checked)
+	prg, err := env.Program(checked, getAdditionalCELFuncs())
 	if err != nil {
 		return env, fmt.Errorf("CEL program error when setting variable %s to %s, error: %v", name, val, err)
 	}
@@ -340,92 +350,162 @@ func setOneVariable(env cel.Env, name string, val string, variables map[string]i
 		return env, fmt.Errorf("CEL Eval error when setting variable %s to %s, error: %v", name, val, err)
 	}
 
-	klog.Infof("When setting variable %s to %s, eval of value results in typename: %s, value type: %T, value: %s\n", name, val, out.Type().TypeName(), out.Value(), out.Value())
+	if klog.V(3) {
+		klog.Infof("When setting variable %s to %s, eval of value results in typename: %s, value type: %T, value: %s\n", name, val, out.Type().TypeName(), out.Value(), out.Value())
+	}
 
+	env, err = createOneVariable(env, name, val, out, variables)
+	return env, err
+}
+
+
+func createOneVariable(env cel.Env, entireName string, val string, out ref.Val, variables map[string]interface{}) (cel.Env, error) {
+	nameArray := strings.Split(entireName, ".")
+	arrayLen := len(nameArray)
+	tempMap := variables
+	var err error
+	for index:= 0;  index < arrayLen-1; index++ {
+		componentName := nameArray[index]
+		entry, ok := tempMap[componentName]
+		if !ok {
+			/* entry does not exist. Create it */
+			if index == 0 {
+				/* create top level identifier */
+				ident := decls.NewIdent(componentName, decls.NewMapType(decls.String, decls.Any), nil)
+				env, err = env.Extend(cel.Declarations(ident))
+				if err != nil {
+					return  env, err
+				}
+			}
+			newMap := make(map[string]interface{})
+			tempMap[componentName] = newMap
+			tempMap = newMap
+		} else {
+			/* entry already exists */
+			entryMap, ok := entry.(map[string]interface{})
+			if ! ok {
+				return env, fmt.Errorf("unable to set %s to %s: the component name %s already exists but is not a map", entireName, val, componentName) 
+			}
+			tempMap = entryMap
+		}
+	}
+	lastComponent := nameArray[arrayLen-1]
+	/* If we get here, tempMap is a map that we can directly insert the value */
+    env, err = createOneVariableHelper(env, entireName, lastComponent,  val, out, tempMap, arrayLen == 1)
+	return env, err
+}
+
+func createOneVariableHelper(env cel.Env, entireName string, name string, val string, out ref.Val, variables map[string]interface{}, createNewIdent bool) (cel.Env, error) {
 	var ok bool
+	var err error
 	switch out.Type().TypeName() {
 	case TYPEINT:
 		var intval int64
 		if intval, ok = out.Value().(int64); !ok {
-			return env, fmt.Errorf("Unable to cast variable %s, value %s into int64", name, val)
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into int64", entireName, val)
 		}
 		floatval := float64(intval)
 
-		ident := decls.NewIdent(name, decls.Double, nil)
-		env, err = env.Extend(cel.Declarations(ident))
-		if err != nil {
-			return env, err
+		if createNewIdent {
+			ident := decls.NewIdent(name, decls.Double, nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return env, err
+			}
 		}
 		variables[name] = floatval
-		klog.Infof("variable %s set to %v", name, floatval)
+		if klog.V(4) {
+			klog.Infof("variable %s set to %v", entireName, floatval)
+		}
 	case TYPEBOOL:
 		boolval, ok := out.Value().(bool);
 		if ! ok {
-			return env, fmt.Errorf("Unable to cast variable %s, value %s into bool", name, val)
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into bool", entireName, val)
 		}
 
-		ident := decls.NewIdent(name, decls.Bool, nil)
-		env, err = env.Extend(cel.Declarations(ident))
-		if err != nil {
-			return env, err
+		if createNewIdent {
+			ident := decls.NewIdent(name, decls.Bool, nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return env, err
+			}
 		}
 		variables[name] = boolval
-		klog.Infof("variable %s set to %v", name, boolval)
+		if klog.V(4) {
+			klog.Infof("variable %s set to %v", entireName, boolval)
+		}
 	case TYPEDOUBLE:
 		floatvar, ok := out.Value().(float64)
 		if !ok {
-			return env, fmt.Errorf("Unable to cast variable %s, value %s into float64", name, val)
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into float64", entireName, val)
 		}
 
-		ident := decls.NewIdent(name, decls.Double, nil)
-		env, err = env.Extend(cel.Declarations(ident))
-		if err != nil {
-			return env, err
+		if createNewIdent {
+			ident := decls.NewIdent(name, decls.Double, nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return env, err
+			}
 		}
 		variables[name]  = floatvar
-		klog.Infof("variable %s set to %v", name, floatvar)
+		if klog.V(4) {
+			klog.Infof("variable %s set to %v", entireName, floatvar)
+		}
 	case TYPESTRING:
 		stringval, ok := out.Value().(string)
 		if !ok {
-			return env, fmt.Errorf("Unable to cast variable %s, value %s into string", name, val)
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into string", entireName, val)
 		}
 
-		ident := decls.NewIdent(name, decls.String, nil)
-		env, err = env.Extend(cel.Declarations(ident))
-		if err != nil {
-			return env, err
+		if createNewIdent {
+			ident := decls.NewIdent(name, decls.String, nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return env, err
+			}
 		}
 		variables[name] = stringval
-		klog.Infof("variable %s set to %v", name, stringval)
+		if klog.V(4) {
+			klog.Infof("variable %s set to %v", entireName, stringval)
+		}
 	case TYPELIST:
 		var listval interface{} = out.Value()
 		switch out.Value().(type) {
 		case []ref.Val:
 		case []interface{}:
+		case []string:
 		default:
-			return  env, fmt.Errorf("Unable to cast variable %s, value %s into %T", name, val, out.Value())
+			return  env, fmt.Errorf("Unable to cast variable %s, value %s into %T", entireName, val, out.Value())
 		}
-		ident := decls.NewIdent(name, decls.NewListType(decls.Any), nil)
-		env, err = env.Extend(cel.Declarations(ident))
-		if err != nil {
-			return env, err
+		if createNewIdent {
+			ident := decls.NewIdent(name, decls.NewListType(decls.Any), nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return env, err
+			}
 		}
 		variables[name] = listval
-		klog.Infof("variable %s set to %v", name, listval)
+		if klog.V(4) {
+			klog.Infof("variable %s set to %v", entireName, listval)
+		}
 	case TYPEMAP:
 		mapval, ok := out.Value().(map[string]interface{})
 		if !ok {
-			return env, fmt.Errorf("Unable to cast variable %s, value %s into ma[pstring]interface{}", name, val)
+			return env, fmt.Errorf("Unable to cast variable %s, value %s into ma[pstring]interface{}", entireName, val)
 		}
-		ident := decls.NewIdent(name, decls.NewMapType(decls.String, decls.Any), nil)
-		env, err = env.Extend(cel.Declarations(ident))
-		if err != nil {
-			return  env, err
+		if createNewIdent {
+			ident := decls.NewIdent(name, decls.NewMapType(decls.String, decls.Any), nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return  env, err
+			}
 		}
 		variables[name] = mapval
-		klog.Infof("variable %s set to %v", name, mapval)
+		if klog.V(4) {
+			klog.Infof("variable %s set to %v", entireName, mapval)
+		}
 	default:
-		return env, fmt.Errorf("In function setOneVariable: Unable to process variable name: %s, value: %s, type %s", name, val, out.Type().TypeName())
+		return env, fmt.Errorf("In function setOneVariable: Unable to process variable name: %s, value: %s, type %s", entireName, val, out.Type().TypeName())
 	}
 	return env, nil
 }
@@ -469,7 +549,7 @@ func evalCondition(env cel.Env, when string, variables map[string]interface{}) (
 	if issues != nil && issues.Err() != nil {
 		return false, fmt.Errorf("Error parsing condition %s, error: %v", when, issues.Err())
 	}
-	prg, err := env.Program(checked)
+	prg, err := env.Program(checked, getAdditionalCELFuncs())
 	if err != nil {
 		return false, fmt.Errorf("Error creating CEL program for condition %s, error: %v", when, err)
 	}
@@ -728,4 +808,71 @@ func getTimestamp() string {
 	lastTime = now
 
 	return fmt.Sprintf("%04d%02d%02d%02d%02d%02d%01d", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(),now.Second(), now.Nanosecond()/100000000)
+}
+
+/* implementation of toDomainName for CEL */
+func toDomainNameCEL(param ref.Val) ref.Val {
+	str, ok := param.(types.String)
+	if !ok {
+		return types.ValOrErr(param, "unexpected type '%v' passed to toDomainName", param.Type())
+	}
+	return types.String(toDomainName(string(str)))
+}
+
+/* implementation of toLabel for CEL */
+func toLabelCEL(param ref.Val) ref.Val {
+	str, ok := param.(types.String)
+	if !ok {
+		return types.ValOrErr(param, "unexpected type '%v' passed to toLabel", param.Type())
+	}
+	return types.String(toLabel(string(str)))
+}
+
+/* implementation of split for CEL */
+func splitCEL(strVal ref.Val, sepVal ref.Val ) ref.Val {
+	str, ok := strVal.(types.String)
+	if !ok {
+		return types.ValOrErr(strVal, "unexpected type '%v' passed as first parameter to function split", strVal.Type())
+	}
+	sep, ok := sepVal.(types.String)
+	if !ok {
+		return types.ValOrErr(sepVal, "unexpected type '%v' passed as second parameter to function split", sepVal.Type())
+	}
+	arrayStr := strings.Split(string(str), string(sep))
+
+	return types.NewStringList(types.DefaultTypeAdapter, arrayStr)
+}
+
+/* Get declaration of additional overloaded CEL functions */
+func getAdditionalCELFuncDecls() cel.EnvOption{
+	return triggerFuncDecls
+}
+
+/* Get implemenations of additional overloaded CEL functions */
+func getAdditionalCELFuncs() cel.ProgramOption {
+	return triggerFuncs
+}
+
+var triggerFuncDecls cel.EnvOption
+var triggerFuncs cel.ProgramOption
+
+func init() {
+	triggerFuncDecls = cel.Declarations( 
+		decls.NewFunction("toDomainName", 
+			decls.NewOverload("toDomainName_string", []*exprpb.Type{decls.String}, decls.String)),
+		decls.NewFunction("toLabel", 
+			decls.NewOverload("toLabel_string", []*exprpb.Type{decls.String}, decls.String)),
+		decls.NewFunction("split",
+			decls.NewOverload("split_string", []*exprpb.Type{decls.String, decls.String}, decls.NewListType(decls.String))))
+
+	triggerFuncs = cel.Functions(
+		&functions.Overload{
+	        Operator: "toDomainName",
+	        Unary: toDomainNameCEL} ,
+		&functions.Overload{
+	        Operator: "toLabel",
+	        Unary: toLabelCEL} ,
+		&functions.Overload{
+	        Operator: "split",
+	        Binary: splitCEL})
 }

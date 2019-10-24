@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -44,6 +45,9 @@ const (
 	COLLECTIONS                = "collections"
 	REPOSITORIES               = "repositories"
 	ACTIVATEDEFAULTCOLLECTIONS = "activateDefaultCollections"
+
+    maxLabelLength = 63  // max length of a label in Kubernetes
+    maxNameLength  = 253 // max length of a name in Kubernetes
 )
 
 /*
@@ -66,8 +70,10 @@ data:
  If the url in the secret is a prefix of repoURL, and username and token are defined, then return the user and token.
  Return user, token, error.
  TODO: Change to controller pattern and cache the secrets.
+
+Return: username, token, secret name, error
 */
-func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, error) {
+func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, string, error) {
 	gvr := schema.GroupVersionResource{
 		Group:    "",
 		Version:  V1,
@@ -82,11 +88,31 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 	var err error
 	unstructuredList, err = intf.List(metav1.ListOptions{})
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	for _, unstructuredObj := range unstructuredList.Items {
 		var objMap = unstructuredObj.Object
+
+		metadataObj, ok := objMap[METADATA]
+		if !ok {
+			continue
+		}
+
+		metadata, ok := metadataObj.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+        nameObj, ok := metadata["name"]
+        if !ok {
+            continue
+        }
+        name, ok := nameObj.(string)
+        if !ok {
+            continue
+        } 
+
 		dataMapObj, ok := objMap[DATA]
 		if !ok {
 			continue
@@ -107,7 +133,7 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 		}
 		decodedURLBytes, err := base64.StdEncoding.DecodeString(url)
 		if err != nil {
-			return "", "", err
+			return "", "", "", err
 		}
 
 		decodedURL := string(decodedURLBytes)
@@ -136,16 +162,16 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 
 		decodedUserName, err := base64.StdEncoding.DecodeString(username)
 		if err != nil {
-			return "", "", err
+			return "", "", "", err
 		}
 
 		decodedToken, err := base64.StdEncoding.DecodeString(token)
 		if err != nil {
-			return "", "", err
+			return "", "", "", err
 		}
-		return string(decodedUserName), string(decodedToken), nil
+		return string(decodedUserName), string(decodedToken), name,  nil
 	}
-	return "", "", fmt.Errorf("Unable to find API token for url: %s", repoURL)
+	return "", "", "", fmt.Errorf("Unable to find API token for url: %s", repoURL)
 }
 
 /* Get the URL to kabanero-index.yaml
@@ -266,4 +292,174 @@ func getKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string,
 		}
 	}
 	return "", fmt.Errorf("Unable to find collection url in kabanero custom resource for namespace %s", namespace)
+}
+
+/* @Return true if character is valid for a domain name */
+func isValidDomainNameChar(ch byte) bool {
+    return (ch == '.' || ch == '-' ||
+        (ch >= 'a' && ch <= 'z') ||
+        (ch >= '0' && ch <= '9'))
+}
+
+/* Convert a name to domain name format.
+ The name must
+ - Start with [a-z0-9]. If not, "0" is prepended.
+ - lower case. If not, lower case is used.
+ - contain only '.', '-', and [a-z0-9]. If not, "." is used insteaad.
+ - end with alpha numeric characters. Otherwise, '0' is appended
+ - can't have consecutive '.'.  Consecutivie ".." is substituted with ".".
+Return emtpy string if the name is empty after conversion
+*/
+func toDomainName(name string) string {
+    maxLength := maxNameLength
+    name = strings.ToLower(name)
+    ret := bytes.Buffer{}
+    chars := []byte(name)
+    for i, ch := range chars {
+        if i == 0 {
+            // first character must be [a-z0-9]
+            if (ch >= 'a' && ch <= 'z') ||
+                (ch >= '0' && ch <= '9') {
+                ret.WriteByte(ch)
+            } else {
+                ret.WriteByte('0')
+                if isValidDomainNameChar(ch) {
+                    ret.WriteByte(ch)
+                } else {
+                    ret.WriteByte('.')
+                }
+            }
+        } else {
+            if isValidDomainNameChar(ch) {
+                ret.WriteByte(ch)
+            } else {
+                ret.WriteByte('.')
+            }
+        }
+    }
+
+    // change all ".." to ".
+    retStr := ret.String()
+    for strings.Index(retStr, "..") > 0 {
+        retStr = strings.ReplaceAll(retStr, "..", ".")
+    }
+
+    strLen := len(retStr)
+    if strLen == 0 {
+        return retStr
+    }
+    if strLen > maxLength {
+        strLen = maxLength
+        retStr = retStr[0:strLen]
+    }
+    ch := retStr[strLen-1]
+    if (ch >= 'a' && ch <= 'z') ||
+        (ch >= '0' && ch <= '9') {
+        // last char is alphanumeric
+        return retStr
+    }
+    if strLen < maxLength-1 {
+        //  append alphanumeric
+        return retStr + "0"
+    }
+    // replace last char to be alphanumeric
+    return retStr[0:strLen-2] + "0"
+}
+
+func isValidLabelChar(ch byte) bool {
+	return (ch == '.' || ch == '-' || (ch == '_') ||
+		(ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= '0' && ch <= '9'))
+}
+
+/* Convert the  name part of  a label
+   The name must
+   - Start with [a-z0-9A-Z]. If not, "0" is prepended.
+   - End with [a-z0-9A-Z]. If not, "0" is appended
+   - Intermediate characters can only be: [a-z0-9A-Z] or '_', '-', and '.' If not, '.' is used.
+- be maximum maxLabelLength characters long
+*/
+func toLabelName(name string) string {
+	chars := []byte(name)
+	ret := bytes.Buffer{}
+	for i, ch := range chars {
+		if i == 0 {
+			// first character must be [a-z0-9]
+			if (ch >= 'a' && ch <= 'z') ||
+				(ch >= 'A' && ch <= 'Z') ||
+				(ch >= '0' && ch <= '9') {
+				ret.WriteByte(ch)
+			} else {
+				ret.WriteByte('0')
+				if isValidLabelChar(ch) {
+					ret.WriteByte(ch)
+				} else {
+					ret.WriteByte('.')
+				}
+			}
+		} else {
+			if isValidLabelChar(ch) {
+				ret.WriteByte(ch)
+			} else {
+				ret.WriteByte('.')
+			}
+		}
+	}
+
+	retStr := ret.String()
+	strLen := len(retStr)
+	if strLen == 0 {
+		return retStr
+	}
+	if strLen > maxLabelLength {
+		strLen = maxLabelLength
+		retStr = retStr[0:strLen]
+	}
+
+	ch := retStr[strLen-1]
+	if (ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= '0' && ch <= '9') {
+		// last char is alphanumeric
+		return retStr
+	} else if strLen < maxLabelLength-1 {
+		//  append alphanumeric
+		return retStr + "0"
+	} else {
+		// replace last char to be alphanumeric
+		return retStr[0:strLen-2] + "0"
+	}
+}
+
+func toLabel(input string) string {
+	slashIndex := strings.Index(input, "/")
+	var prefix, label string
+	if slashIndex < 0 {
+		prefix = ""
+		label = input
+	} else if slashIndex == len(input)-1 {
+		prefix = input[0:slashIndex]
+		label = ""
+	} else {
+		prefix = input[0:slashIndex]
+		label = input[slashIndex+1:]
+	}
+
+	newPrefix := toDomainName(prefix)
+	newLabel := toLabelName(label)
+	ret := ""
+	if newPrefix == "" {
+		if newLabel == "" {
+			// shouldn't happen
+			newLabel = "nolabel"
+		} else {
+			ret = newLabel
+		}
+	} else if newLabel == "" {
+		ret = newPrefix
+	} else {
+		ret = newPrefix + "/" + newLabel
+	}
+	return ret
 }

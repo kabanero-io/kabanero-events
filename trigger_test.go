@@ -17,6 +17,8 @@ const (
 	TRIGGER1 = "test_data/trigger1.yaml"
 	TRIGGER2 = "test_data/trigger2.yaml"
 	TRIGGER3 = "test_data/trigger3.yaml"
+	TRIGGER4 = "test_data/trigger4.yaml"
+	TRIGGER5 = "test_data/trigger5.yaml"
 )
 
 /* Simaple test to read data structure*/
@@ -367,4 +369,180 @@ func TestTimestamp(t *testing.T) {
 		last = next
 	}
 	fmt.Printf("Last timestamp is : %s\n", last)
+}
+
+func TestAdditionalfunctions(t *testing.T) {
+
+	triggerDef, err := readTriggerDefinition(TRIGGER4)
+	if err != nil {
+		t.Error(err)
+	}
+
+	var event map[string]interface{}
+	_, variables, _, err := initializeCELEnv(triggerDef, event)
+	if err != nil {
+		t.Error(err)
+	}
+
+	str1, ok := variables["str1"]
+	if !ok {
+		t.Errorf("Unable to locate variable str1")
+	}
+	expectedStr1 := "abc.def"
+	if str1 != expectedStr1 {
+		t.Errorf("str1 value %v is not expected value %v", str1, expectedStr1)
+	}
+
+	str2Obj, ok := variables["str2"]
+	if ! ok {
+		t.Errorf("Unable to locate variable str2")
+	}
+	fmt.Printf("after split, type: %t,  value: %v", str2Obj, str2Obj)
+	str2, ok := str2Obj.([]string)
+	if !ok {
+		t.Errorf("str2 %v is not []string", str2)
+	}
+
+	str3, ok := variables["str3"]
+	if !ok {
+		t.Errorf("Unable to locate variable str3")
+	}
+	expectedStr3 := "b"
+	if str3 != expectedStr3 {
+		t.Errorf("str3 value %v is not expected value %v", str3, expectedStr3)
+	}
+
+}
+
+var testNestedVariableTemplate string = `
+----- Event Variables ----
+{{.event.stringAttr}}
+{{.event.floatAttr}}
+{{.event.intAttr}}
+{{.event.boolAttr}}
+{{.event.arrayAttr}}
+{{index .event.arrayAttr 0}}
+{{index .event.arrayAttr 1}}
+{{.event.objectAttr}}
+{{.event.objectAttr.innerFloatAttr}}
+{{.event.objectAttr.innerStringAttr}}
+----- Other Variables ----
+{{.nested.int64Attr}}
+{{.nested.float64Attr}}
+{{.nested.boolAttr}}
+{{.nested.arrayStringAttr}}
+{{.nested.arrayIntAttr}}
+{{.nested.eventIntAttr}}
+{{.nested.eventFloatAttr}}
+{{.nested.eventBoolAttr}}
+{{.nested.eventArrayElementAttr}}
+{{.nested.eventArrayAttr}}
+{{.nested.eventObjectAttr}}
+{{.nested.eventObjectInnerFloatAttr}}
+{{.nested.mathAttr1}}
+{{.nested.mathAttr2}}
+{{.nested.listAttrWithVariables}}
+{{.nested.ifThenElseStringAttr}}
+----- Reuse Variables ----
+{{.nested.reuseInt64Attr}}
+{{.nested.reuseFloat64Attr}}
+{{.nested.reuseboolAttr}}
+{{.nested.reusearrayStringAttr}}
+{{.nested.reuseArrayIntAttr}}
+{{.nested.reuseEventIntAttr}}
+{{.nested.reuseEventFloatAttr}}
+{{.nested.reuseEventBoolAttr}}
+{{.nested.reuseEventArrayElementAttr}}
+{{.nested.reuseEventArrayAttr}}
+{{.nested.reuseEventObjectAttr}}
+{{.nested.reuseEventObjectInnerFloatAttr}}
+{{.nested.reuseMathAttr1}}
+{{.nested.reuseMathAttr2}}
+{{.nested.reuseListAttrWithVariables}}
+{{.nested.reuseIfThenElseStringAttr}}
+----- Double Nested Variables ----
+{{.nested.nested1.int64Attr}}
+{{.nested.nested1.reuseInt64Attr}}
+`
+
+var nestedVariableResult string = `
+----- Event Variables ----
+string1
+1.2
+100
+true
+[apple orange]
+apple
+orange
+map[innerFloatAttr:1.2 innerStringAttr:inner string]
+1.2
+inner string
+----- Other Variables ----
+1
+1.2
+true
+[abc def ghi]
+[1 2 3]
+100
+1.2
+true
+apple
+[apple orange]
+map[innerFloatAttr:1.2 innerStringAttr:inner string]
+1.2
+102
+3.2
+[abc string1]
+got-string-1
+----- Reuse Variables ----
+1
+1.2
+true
+[abc def ghi]
+[1 2 3]
+100
+1.2
+true
+apple
+[apple orange]
+map[innerFloatAttr:1.2 innerStringAttr:inner string]
+1.2
+102
+3.2
+[abc string1]
+got-string-1
+----- Double Nested Variables ----
+10
+10
+`
+
+
+/* Test double nested variables */
+func TestDoubleNestedCELVariables(t *testing.T) {
+	srcEvent := []byte(`{ "event":  {"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} }} `)
+	var event map[string]interface{}
+	err := json.Unmarshal(srcEvent, &event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	triggerDef, err := readTriggerDefinition(TRIGGER5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, variables, _, err1 := initializeCELEnv(triggerDef, event)
+	if err1 != nil {
+		t.Fatal(err1)
+	}
+
+	afterSubstitution, err2 := substituteTemplate(testNestedVariableTemplate, variables)
+	if err2 != nil {
+		t.Fatal(err2)
+	}
+	fmt.Printf("after substitution: %s\n", afterSubstitution)
+
+
+	if nestedVariableResult != afterSubstitution {
+		t.Fatalf("template substitution is not as expected: Expecting: '%s', but received: '%s'", nestedVariableResult,afterSubstitution)
+	}
 }

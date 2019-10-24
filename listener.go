@@ -37,23 +37,23 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
     header := req.Header
 	klog.Infof("Recevied request. Header: %v", header)
 
-    initialVariables := make(map[string]interface{})
-	initialVariables["eventType"] = "Repository"
 	reposiotryEventHeader, ok := header[http.CanonicalHeaderKey("x-github-event")]
 	if !ok {
-		klog.Errorf("header does not contain x-github-event. Skipping")
+		klog.Errorf("header does not contain x-github-event. Skipping. Header content: %v", header)
 		return
 	}
+    initialVariables := make(map[string]interface{})
+	initialVariables["eventType"] = "Repository"
 	initialVariables["repositoryEvent"] = reposiotryEventHeader[0]
 	initialVariables["repositoryType"] = "github"
 	initialVariables[CONTROLNAMESPACE] = webhookNamespace
 
 	hostHeader, isEnterprise := header[http.CanonicalHeaderKey("x-github-enterprise-host")]
+    var host string
 	if !isEnterprise {
-		klog.Errorf("header does not contain x-github-enterprise-host. Skipping")
-		return
+        host = "github.com"
 	} 
-	host := hostHeader[0]
+	host = hostHeader[0]
 
 	var body io.ReadCloser = req.Body
 
@@ -78,11 +78,12 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-    user, token , err := getURLAPIToken(dynamicClient, webhookNamespace, htmlURL )
+    user, token , secretName, err := getURLAPIToken(dynamicClient, webhookNamespace, htmlURL )
 	if err != nil {
 		klog.Errorf("Unable to get user/token secrets for URL %v", htmlURL);
 		return
 	}
+	initialVariables["accessTokenSecretName"] = secretName 
 
 	githubURL := "https://" + host
 	collectionPrefix, collectionID, collectionVersion, found, err := downloadAppsodyConfig(owner, name, githubURL, user, token, isEnterprise)
@@ -96,7 +97,8 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 		initialVariables["collectionVersion"] = collectionVersion
 	}
 
-	// get the refs if they xist
+	// get the refs if they exist
+	/* TODO: remove setting "ref".  */
 	refsObj, ok := bodyMap["ref"]
 	if ok {
 		refs, ok := refsObj.(string)
@@ -122,8 +124,8 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 func newListener() error{
 
     http.HandleFunc("/webhook", listenerHandler)
-	klog.Infof("Starting listener on port 9080");
-    err := http.ListenAndServe(":9080", nil)
+	klog.Infof("Starting listener on port 9443");
+    err := http.ListenAndServe(":9443", nil)
 	return err
 }
 
@@ -199,7 +201,6 @@ func downloadAppsodyConfig(owner, repository, githubURL, user, token string, isE
 
 	context := context.Background()
 
-	/* TODO: add SSL */
     tp := github.BasicAuthTransport{
        Username: user,
        Password: token,
@@ -234,18 +235,30 @@ func downloadAppsodyConfig(owner, repository, githubURL, user, token string, isE
 	if  err != nil {
 		return "", "", "", false, err
 	}
-	
-	/* stack: kabanero/nodejs-express:0.2 */
-	bufStr := string(buf)
-	components := strings.Split(bufStr, ":")
-	if len(components) == 3 {
-		prefixName := strings.Trim(components[1], " ")
+
+	/* look in the yaml for: stack: kabanero/nodejs-express:0.2 */
+    appsodyConfigMap, err := yamlToMap(buf);
+    if err != nil {
+        return "", "", "", false, err
+    }
+    stack, ok := appsodyConfigMap["stack"]
+    if !ok {
+	   return "", "", "", false, fmt.Errorf(".appsody-config.yaml does not contain stack")
+    }
+    stackStr, ok := stack.(string)
+    if !ok {
+	   return "", "", "", false, fmt.Errorf(".appsody-config.yaml stack: %s is not a string", stack)
+    }
+
+	components := strings.Split(stackStr, ":")
+	if len(components) == 2 {
+		prefixName := strings.Trim(components[0], " ")
 		prefixNameArray := strings.Split(prefixName, "/")
 		if len(prefixNameArray) == 2 {
-			return prefixNameArray[0], prefixNameArray[1], components[2], true, nil
-		} 
+			return prefixNameArray[0], prefixNameArray[1], components[1], true, nil
+		}
 	} 
-	return "", "", "", false, fmt.Errorf(".appsody-config.yaml contains %s.  It is not of the format stacK: prefix/name:version", bufStr)
+	return "", "", "", false, fmt.Errorf(".appsody-config.yaml contains %v.  It is not of the format stacK: prefix/name:version", stackStr)
 
 }
 
