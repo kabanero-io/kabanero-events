@@ -98,6 +98,56 @@ Running a temporary copy of Kabanero Webhook in OpenShift can be done using `oc 
 oc new-app kabanero/webhook -e KABANERO_INDEX_URL=<url> 
 ```
 
+
+### Using Event Triggers on a GitHub Repository Requiring SSH Authentication
+Additional steps are necessary if using event triggers on a GitHub repository requiring SSH authentication. The first
+step is to use the SSH URL for a GitHub repository in your PipelineResource for your git source. In [sample0](https://github.com/kabanero-io/kabanero-webhook/tree/master/test_data/sandbox/sample0),
+to update the git URL, update the `cloneURL` of `eventTriggers.yaml` to use `event.repository.ssh_url`.
+
+Another necessary step is to base64 encode the SSH private key associated with your GitHub account and add it to a
+secret. An example Secret has been provided below.
+
+#### ssh-key-secret.yaml
+```yaml
+ apiVersion: v1
+ kind: Secret
+ metadata:
+   name: ssh-key
+   annotations:
+     tekton.dev/git-0: github.ibm.com # URL to GH or your GHE
+ type: kubernetes.io/ssh-auth
+ data:
+   ssh-privatekey: <base64 encoded private key> # This can be generated using `cat ~/.ssh/id_rsa | base64`
+
+   # This is non-standard, but its use is encouraged to make this more secure.
+   #known_hosts: <base64 encoded>
+```
+
+After applying the Secret with `kubectl apply -f ssh-key-secret.yaml`, associate it with the ServiceAccount you created
+to run the Appsody Tekton builds. For example, this can be done with `appsody-sa` which is used by the samples by running
+```bash
+$ kubectl edit sa appsody-sa -o yaml
+```
+
+and then appending `ssh-key` to the `secrets` section like so:
+```yaml
+ apiVersion: v1
+ imagePullSecrets:
+ - name: appsody-sa-dockercfg-4vzbk
+ kind: ServiceAccount
+ metadata:
+   creationTimestamp: "2019-10-22T14:05:09Z"
+   name: appsody-sa
+   namespace: kabanero
+   resourceVersion: "2333807"
+   selfLink: /api/v1/namespaces/kabanero/serviceaccounts/appsody-sa
+   uid: f5362d51-f4d4-11e9-ba0d-0016ac1020f9
+ secrets:
+ - name: appsody-sa-token-r7kdg
+ - name: appsody-sa-dockercfg-4vzbk
+ - name: ssh-key
+```
+
 <a name="Functional_Spec"></a>
 ## Functional Specifications
 **Note:** The event trigger portion of this specification shall be moved to the kabanero-event repository when the implementation is separated into distinct web hook and event components.
