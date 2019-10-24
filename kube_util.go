@@ -46,6 +46,7 @@ const (
 	REPOSITORIES               = "repositories"
 	ACTIVATEDEFAULTCOLLECTIONS = "activateDefaultCollections"
 
+    maxLabelLength = 63  // max length of a label in Kubernetes
     maxNameLength  = 253 // max length of a name in Kubernetes
 )
 
@@ -363,4 +364,102 @@ func toDomainName(name string) string {
     }
     // replace last char to be alphanumeric
     return retStr[0:strLen-2] + "0"
+}
+
+func isValidLabelChar(ch byte) bool {
+	return (ch == '.' || ch == '-' || (ch == '_') ||
+		(ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= '0' && ch <= '9'))
+}
+
+/* Convert the  name part of  a label
+   The name must
+   - Start with [a-z0-9A-Z]. If not, "0" is prepended.
+   - End with [a-z0-9A-Z]. If not, "0" is appended
+   - Intermediate characters can only be: [a-z0-9A-Z] or '_', '-', and '.' If not, '.' is used.
+- be maximum maxLabelLength characters long
+*/
+func toLabelName(name string) string {
+	chars := []byte(name)
+	ret := bytes.Buffer{}
+	for i, ch := range chars {
+		if i == 0 {
+			// first character must be [a-z0-9]
+			if (ch >= 'a' && ch <= 'z') ||
+				(ch >= 'A' && ch <= 'Z') ||
+				(ch >= '0' && ch <= '9') {
+				ret.WriteByte(ch)
+			} else {
+				ret.WriteByte('0')
+				if isValidLabelChar(ch) {
+					ret.WriteByte(ch)
+				} else {
+					ret.WriteByte('.')
+				}
+			}
+		} else {
+			if isValidLabelChar(ch) {
+				ret.WriteByte(ch)
+			} else {
+				ret.WriteByte('.')
+			}
+		}
+	}
+
+	retStr := ret.String()
+	strLen := len(retStr)
+	if strLen == 0 {
+		return retStr
+	}
+	if strLen > maxLabelLength {
+		strLen = maxLabelLength
+		retStr = retStr[0:strLen]
+	}
+
+	ch := retStr[strLen-1]
+	if (ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= '0' && ch <= '9') {
+		// last char is alphanumeric
+		return retStr
+	} else if strLen < maxLabelLength-1 {
+		//  append alphanumeric
+		return retStr + "0"
+	} else {
+		// replace last char to be alphanumeric
+		return retStr[0:strLen-2] + "0"
+	}
+}
+
+func toLabel(input string) string {
+	slashIndex := strings.Index(input, "/")
+	var prefix, label string
+	if slashIndex < 0 {
+		prefix = ""
+		label = input
+	} else if slashIndex == len(input)-1 {
+		prefix = input[0:slashIndex]
+		label = ""
+	} else {
+		prefix = input[0:slashIndex]
+		label = input[slashIndex+1:]
+	}
+
+	newPrefix := toDomainName(prefix)
+	newLabel := toLabelName(label)
+	ret := ""
+	if newPrefix == "" {
+		if newLabel == "" {
+			// shouldn't happen
+			newLabel = "nolabel"
+		} else {
+			ret = newLabel
+		}
+	} else if newLabel == "" {
+		ret = newPrefix
+	} else {
+		ret = newPrefix + "/" + newLabel
+	}
+	return ret
 }
