@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -44,6 +45,8 @@ const (
 	COLLECTIONS                = "collections"
 	REPOSITORIES               = "repositories"
 	ACTIVATEDEFAULTCOLLECTIONS = "activateDefaultCollections"
+
+    maxNameLength  = 253 // max length of a name in Kubernetes
 )
 
 /*
@@ -288,4 +291,76 @@ func getKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string,
 		}
 	}
 	return "", fmt.Errorf("Unable to find collection url in kabanero custom resource for namespace %s", namespace)
+}
+
+/* @Return true if character is valid for a domain name */
+func isValidDomainNameChar(ch byte) bool {
+    return (ch == '.' || ch == '-' ||
+        (ch >= 'a' && ch <= 'z') ||
+        (ch >= '0' && ch <= '9'))
+}
+
+/* Convert a name to domain name format.
+ The name must
+ - Start with [a-z0-9]. If not, "0" is prepended.
+ - lower case. If not, lower case is used.
+ - contain only '.', '-', and [a-z0-9]. If not, "." is used insteaad.
+ - end with alpha numeric characters. Otherwise, '0' is appended
+ - can't have consecutive '.'.  Consecutivie ".." is substituted with ".".
+Return emtpy string if the name is empty after conversion
+*/
+func toDomainName(name string) string {
+    maxLength := maxNameLength
+    name = strings.ToLower(name)
+    ret := bytes.Buffer{}
+    chars := []byte(name)
+    for i, ch := range chars {
+        if i == 0 {
+            // first character must be [a-z0-9]
+            if (ch >= 'a' && ch <= 'z') ||
+                (ch >= '0' && ch <= '9') {
+                ret.WriteByte(ch)
+            } else {
+                ret.WriteByte('0')
+                if isValidDomainNameChar(ch) {
+                    ret.WriteByte(ch)
+                } else {
+                    ret.WriteByte('.')
+                }
+            }
+        } else {
+            if isValidDomainNameChar(ch) {
+                ret.WriteByte(ch)
+            } else {
+                ret.WriteByte('.')
+            }
+        }
+    }
+
+    // change all ".." to ".
+    retStr := ret.String()
+    for strings.Index(retStr, "..") > 0 {
+        retStr = strings.ReplaceAll(retStr, "..", ".")
+    }
+
+    strLen := len(retStr)
+    if strLen == 0 {
+        return retStr
+    }
+    if strLen > maxLength {
+        strLen = maxLength
+        retStr = retStr[0:strLen]
+    }
+    ch := retStr[strLen-1]
+    if (ch >= 'a' && ch <= 'z') ||
+        (ch >= '0' && ch <= '9') {
+        // last char is alphanumeric
+        return retStr
+    }
+    if strLen < maxLength-1 {
+        //  append alphanumeric
+        return retStr + "0"
+    }
+    // replace last char to be alphanumeric
+    return retStr[0:strLen-2] + "0"
 }

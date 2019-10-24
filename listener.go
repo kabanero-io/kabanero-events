@@ -97,7 +97,8 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 		initialVariables["collectionVersion"] = collectionVersion
 	}
 
-	// get the refs if they xist
+	// get the refs if they exist
+	/* TODO: remove setting "ref".  */
 	refsObj, ok := bodyMap["ref"]
 	if ok {
 		refs, ok := refsObj.(string)

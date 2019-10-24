@@ -31,6 +31,9 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types/ref"
+	"github.com/google/cel-go/common/types"
+	"github.com/google/cel-go/interpreter/functions"
+	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 
@@ -97,6 +100,7 @@ type EventTrigger struct {
 EventTriggerDefinition as used in the trigger file
 */
 type EventTriggerDefinition struct {
+	Dryrun   *bool       `yaml:"dryrun,omitempty"`
 	Variables []*Variable `yaml:"variables,omitempty"`
 	EventTriggers  []*EventTrigger  `yaml:"eventTriggers,omitempty"`
 }
@@ -179,14 +183,18 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, ) err
 		substituted = append(substituted, after)
 	}
 
-	/* Apply the files */
-	for _, resource:= range substituted {
-		if klog.V(5) {
-			klog.Infof("applying resource: %s", resource)
-		}
-		err = createResource(resource, jobid, dynamicClient)
-		if err != nil {
-			return err
+    if tp.triggerDef.Dryrun != nil && *tp.triggerDef.Dryrun {
+		klog.Infof("triggerProcessor: dryrun is set. Resources not created")
+    } else {
+		/* Apply the files */
+		for _, resource:= range substituted {
+			if klog.V(5) {
+				klog.Infof("applying resource: %s", resource)
+			}
+			err = createResource(resource, jobid, dynamicClient)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -214,8 +222,10 @@ func initializeCELEnv(td *EventTriggerDefinition, message map[string]interface{}
 	}
 	variables := make(map[string]interface{})
 
-	/* initilize empty CEL environment */
-	env, err := cel.NewEnv()
+	/* initilize empty CEL environment with additional functions */
+	additionalFuncs := getAdditionalCELFuncDecls()
+	klog.Infof("Additional Func Decls: %v", additionalFuncs)
+	env, err := cel.NewEnv(getAdditionalCELFuncDecls() )
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -330,7 +340,7 @@ func setOneVariable(env cel.Env, name string, val string, variables map[string]i
 	if issues != nil && issues.Err() != nil {
 		return env, fmt.Errorf("CEL check error when setting variable %s to %s, error: %v", name, val, issues.Err())
 	}
-	prg, err := env.Program(checked)
+	prg, err := env.Program(checked, getAdditionalCELFuncs())
 	if err != nil {
 		return env, fmt.Errorf("CEL program error when setting variable %s to %s, error: %v", name, val, err)
 	}
@@ -402,6 +412,7 @@ func setOneVariable(env cel.Env, name string, val string, variables map[string]i
 		switch out.Value().(type) {
 		case []ref.Val:
 		case []interface{}:
+		case []string:
 		default:
 			return  env, fmt.Errorf("Unable to cast variable %s, value %s into %T", name, val, out.Value())
 		}
@@ -469,7 +480,7 @@ func evalCondition(env cel.Env, when string, variables map[string]interface{}) (
 	if issues != nil && issues.Err() != nil {
 		return false, fmt.Errorf("Error parsing condition %s, error: %v", when, issues.Err())
 	}
-	prg, err := env.Program(checked)
+	prg, err := env.Program(checked, getAdditionalCELFuncs())
 	if err != nil {
 		return false, fmt.Errorf("Error creating CEL program for condition %s, error: %v", when, err)
 	}
@@ -728,4 +739,57 @@ func getTimestamp() string {
 	lastTime = now
 
 	return fmt.Sprintf("%04d%02d%02d%02d%02d%02d%01d", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(),now.Second(), now.Nanosecond()/100000000)
+}
+
+/* implementation of toDomainName for CEL */
+func toDomainNameCEL(param ref.Val) ref.Val {
+	str, ok := param.(types.String)
+	if !ok {
+		return types.ValOrErr(param, "unexpected type '%v' passed to toDomainName", param.Type())
+	}
+	return types.String(toDomainName(string(str)))
+}
+
+/* implementation of split for CEL */
+func splitCEL(strVal ref.Val, sepVal ref.Val ) ref.Val {
+	str, ok := strVal.(types.String)
+	if !ok {
+		return types.ValOrErr(strVal, "unexpected type '%v' passed as first parameter to function split", strVal.Type())
+	}
+	sep, ok := sepVal.(types.String)
+	if !ok {
+		return types.ValOrErr(sepVal, "unexpected type '%v' passed as second parameter to function split", sepVal.Type())
+	}
+	arrayStr := strings.Split(string(str), string(sep))
+
+	return types.NewStringList(types.DefaultTypeAdapter, arrayStr)
+}
+
+/* Get declaration of additional CEL functions */
+func getAdditionalCELFuncDecls() cel.EnvOption{
+	return triggerFuncDecls
+}
+
+/* Get implemenations of additional CEL functions */
+func getAdditionalCELFuncs() cel.ProgramOption {
+	return triggerFuncs
+}
+
+var triggerFuncDecls cel.EnvOption
+var triggerFuncs cel.ProgramOption
+
+func init() {
+	triggerFuncDecls = cel.Declarations( 
+		decls.NewFunction("toDomainName", 
+			decls.NewOverload("toDomainName_string", []*exprpb.Type{decls.String}, decls.String)),
+		decls.NewFunction("split",
+			decls.NewOverload("split_string", []*exprpb.Type{decls.String, decls.String}, decls.NewListType(decls.String))))
+
+	triggerFuncs = cel.Functions(
+		&functions.Overload{
+	        Operator: "toDomainName",
+	        Unary: toDomainNameCEL} ,
+		&functions.Overload{
+	        Operator: "split",
+	        Binary: splitCEL})
 }
