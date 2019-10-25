@@ -27,8 +27,10 @@ variables:
         variables:
           - name: build.pr.url
             value: ' event.pull_request.url '
+          - name: build.pr.action
+            value: ' event.action '
           - name: build.pr.branch
-            value: 'event.base.ref'
+            value: 'event.pull_request.base.ref'
           - name: build.pr.accessTokenSecret
             value: ' kabanero.accessTokenSecret '
       - when: 'kabanero.repositoryEvent == "push" '
@@ -62,7 +64,7 @@ eventTriggers:
     action:
       applyResources:
         directory: push
-  - when: 'has(kabanero.collectionID) && has(build.pr.branch) && build.pr.branch in build.pr.allowedBranches '
+  - when: 'has(kabanero.collectionID) && has(build.pr.branch) && build.pr.action == "open" && build.pr.branch in build.pr.allowedBranches '
     action:
       applyResources:
         directory: pull
