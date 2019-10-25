@@ -10,5 +10,5 @@ spec:
       value: {{.build.pr.url}}
   secrets:
     - fieldName: githubToken
-      secretName: {{.kabanero.accessTokenSecret}}
+      secretName: {{.kabanero.accessTokenSecretName}}
       secretKey: token

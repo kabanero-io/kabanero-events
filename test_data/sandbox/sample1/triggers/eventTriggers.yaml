@@ -31,8 +31,6 @@ variables:
             value: ' event.action '
           - name: build.pr.branch
             value: 'event.pull_request.base.ref'
-          - name: build.pr.accessTokenSecret
-            value: ' kabanero.accessTokenSecret '
       - when: 'kabanero.repositoryEvent == "push" '
         variables:
           - name: temp.refArray
