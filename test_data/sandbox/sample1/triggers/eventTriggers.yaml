@@ -1,5 +1,5 @@
 settings:
-  dryrun: true
+  dryrun: false
 variables:
 #   Customize these
   - name: build.pr.allowedBranches
