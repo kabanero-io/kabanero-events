@@ -59,11 +59,11 @@ eventTriggers:
     action:
       applyResources:
         directory: push
-  - when: 'has(Kabanero.collectionID) && has(build.pr.branch) && build.pr.branch in build.pr.allowedBranches '
+  - when: 'has(kabanero.collectionID) && has(build.pr.branch) && build.pr.branch in build.pr.allowedBranches '
     action:
       applyResources:
         directory: pull
-  - when: 'has(Kabanero.collectionID) && has(build.pr.branch) && build.pr.branch in build.pr.allowedBranches '
+  - when: 'has(kabanero.collectionID) && has(build.pr.branch) && build.pr.branch in build.pr.allowedBranches '
     action:
       applyResources:
         directory: tag
