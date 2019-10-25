@@ -62,7 +62,11 @@ eventTriggers:
     action:
       applyResources:
         directory: push
-  - when: 'has(kabanero.collectionID) && has(build.pr.branch) && build.pr.action == "open" && build.pr.branch in build.pr.allowedBranches '
+  - when: |-
+      has(kabanero.collectionID) && 
+      has(build.pr.branch) && 
+      build.pr.branch in build.pr.allowedBranches  &&
+      (build.pr.action == "open" || build.pr.action == "synchronize") 
     action:
       applyResources:
         directory: pull
