@@ -46,7 +46,7 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 	initialVariables["eventType"] = "Repository"
 	initialVariables["repositoryEvent"] = reposiotryEventHeader[0]
 	initialVariables["repositoryType"] = "github"
-	initialVariables[CONTROLNAMESPACE] = webhookNamespace
+	initialVariables[NAMESPACE] = webhookNamespace
 
 	hostHeader, isEnterprise := header[http.CanonicalHeaderKey("x-github-enterprise-host")]
     var host string

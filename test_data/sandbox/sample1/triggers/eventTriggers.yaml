@@ -1,16 +1,19 @@
-dryrun: true
+settings:
+  dryrun: true
 variables:
 #   Customize these
   - name: build.pr.allowedBranches
     value: ' [ "master" ] '
   - name: build.push.allowedBranches
     value: ' [ "master" ] '
+  - name: build.tag.pattern
+    value: 'v.[\d]+.[\d]+.[\d]+'
   - name: build.tag.promoteNamespaceSuffix # suffix for promoted namespace. Default is project-test.
     value: '"-test"'
   - name: build.registry
     value: ' "docker-registry.default.svc:5000" '
   - name: build.namespace
-    value: ' kabanero.controlNamespace ' 
+    value: ' kabanero.namespace ' 
   - name: build.serviceAccount
     value: ' "appsody-sa" '
 # Setting Variqables 
@@ -63,7 +66,7 @@ eventTriggers:
     action:
       applyResources:
         directory: pull
-  - when: 'has(kabanero.collectionID) && has(build.pr.branch) && build.pr.branch in build.pr.allowedBranches '
+  - when: 'has(build.tag.sha) && matches(build.tag.version, build.tag.pattern) '
     action:
       applyResources:
         directory: tag

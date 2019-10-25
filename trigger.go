@@ -60,7 +60,6 @@ const (
 	TYPELIST   = "list"
 	TYPEMAP    = "map"
 	WEBHOOK    = "webhook"
-	CONTROLNAMESPACE =	"controlNamespace"
 )
 
 /*
@@ -96,11 +95,15 @@ type EventTrigger struct {
 	EventTriggers []*EventTrigger `yaml:"eventTriggers,omitempty"`
 }
 
+type EventTriggerSettings struct {
+	Dryrun   *bool       `yaml:"dryrun,omitempty"`
+}
+
 /*
 EventTriggerDefinition as used in the trigger file
 */
 type EventTriggerDefinition struct {
-	Dryrun   *bool       `yaml:"dryrun,omitempty"`
+    Settings *EventTriggerSettings  `yaml:"settings,omitempty"`
 	Variables []*Variable `yaml:"variables,omitempty"`
 	EventTriggers  []*EventTrigger  `yaml:"eventTriggers,omitempty"`
 }
@@ -183,7 +186,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, ) err
 		substituted = append(substituted, after)
 	}
 
-    if tp.triggerDef.Dryrun != nil && *tp.triggerDef.Dryrun {
+    if tp.triggerDef.Settings != nil && tp.triggerDef.Settings.Dryrun != nil && *tp.triggerDef.Settings.Dryrun {
 		klog.Infof("triggerProcessor: dryrun is set. Resources not created")
     } else {
 		/* Apply the files */
