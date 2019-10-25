@@ -39,7 +39,7 @@ variables:
               - name: build.push.sshURL
                 value: 'event.repository.ssh_url'
               - name: build.push.branch
-                value: ' refArray[2] '
+                value: ' temp.refArray[2] '
               - name: build.push.toRegistry
                 value: ' push.registryPrefix + "/" + build.namespace +  "/" +  build.repositoryName + ":" + push.sha'
           - when: ' temp.refArray[1] == "tags" '
