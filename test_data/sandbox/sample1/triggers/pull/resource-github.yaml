@@ -1,0 +1,14 @@
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: git-{{.build.nameSuffix}}
+  namespace: {{.build.namespace}}
+spec:
+  type: pullRequest
+  params:
+    - name: url
+      value: {{.build.pr.url}}
+  secrets:
+    - fieldName: githubToken
+      secretName: {{.kabanero.accessTokenSecret}}
+      secretKey: token

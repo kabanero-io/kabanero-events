@@ -1,0 +1,69 @@
+dryrun: true
+variables:
+#   Customize these
+  - name: build.pr.allowedBranches
+    value: ' [ "master" ] '
+  - name: build.push.allowedBranches
+    value: ' [ "master" ] '
+  - name: build.tag.promoteNamespaceSuffix # suffix for promoted namespace. Default is project-test.
+    value: '"-test"'
+  - name: build.registry
+    value: ' "docker-registry.default.svc:5000" '
+  - name: build.namespace
+    value: ' kabanero.controlNamespace ' 
+  - name: build.serviceAccount
+    value: ' "appsody-sa" '
+# Setting Variqables 
+  - when: ' kabanero.eventType == "Repository" '
+    variables:
+      - name: build.repositoryName
+        value: 'toDomainName(event.repository.name)'
+      - name: build.nameSuffix
+        value: 'toDomainName(event.repository.owner.login + "-" + build.repositoryName + "-" + kabanero.jobid)'
+      - when: 'kabanero.repositoryEvent == "pull_request"' 
+        variables:
+          - name: build.pr.url
+            value: ' event.pull_request.url '
+          - name: build.pr.branch
+            value: 'event.base.ref'
+          - name: build.pr.accessTokenSecret
+            value: ' kabanero.accessTokenSecret '
+      - when: 'kabanero.repositoryEvent == "push" '
+        variables:
+          - name: temp.refArray
+            value: ' split(event.ref, "/") '
+          - when: ' temp.refArray[1] == "heads" '
+            variables:  
+              - name: build.push.sha
+                value: ' event.after '
+              - name: build.push.sshURL
+                value: 'event.repository.ssh_url'
+              - name: build.push.branch
+                value: ' refArray[2] '
+              - name: build.push.toRegistry
+                value: ' push.registryPrefix + "/" + build.namespace +  "/" +  build.repositoryName + ":" + push.sha'
+          - when: ' temp.refArray[1] == "tags" '
+            variables:
+              - name: build.tag.sha
+                value: ' event.after '
+              - name: build.tag.promoteToNamespace
+                value: ' build.repositoryName + tag.promoteNamespaceSuffix '
+              - name: build.tag.version
+                value: ' temp.refArray[2] '
+              - name: build.tag.fromResitry
+                value: ' build.registry+ "/" + build.namespace +  "/" +  build.repositoryName + ":" + tag.sha '
+              - name: build.tag.toRegistry
+                value: 'build.registry+ "/" + tag.promoteToNamespace + "/" +  build.repositoryName + ":" + tag.version '
+eventTriggers:
+  - when: 'has(kabanero.collectionID) && has(build.push.branch) && build.push.branch in build.push.allowedBranches'
+    action:
+      applyResources:
+        directory: push
+  - when: 'has(Kabanero.collectionID) && has(build.pr.branch) && build.pr.branch in build.pr.allowedBranches '
+    action:
+      applyResources:
+        directory: pull
+  - when: 'has(Kabanero.collectionID) && has(build.pr.branch) && build.pr.branch in build.pr.allowedBranches '
+    action:
+      applyResources:
+        directory: tag
