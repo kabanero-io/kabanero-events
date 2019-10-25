@@ -52,7 +52,7 @@ variables:
               - name: build.tag.promoteToNamespace
                 value: ' build.repositoryName + tag.promoteNamespaceSuffix '
               - name: build.tag.version
-                value: ' temp.refArray[2] '
+                value: ' string(temp.refArray[2]) '
               - name: build.tag.fromResitry
                 value: ' build.registry+ "/" + build.namespace +  "/" +  build.repositoryName + ":" + tag.sha '
               - name: build.tag.toRegistry
