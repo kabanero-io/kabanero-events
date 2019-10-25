@@ -41,7 +41,7 @@ variables:
               - name: build.push.branch
                 value: ' temp.refArray[2] '
               - name: build.push.toRegistry
-                value: ' push.registryPrefix + "/" + build.namespace +  "/" +  build.repositoryName + ":" + push.sha'
+                value: ' build.registry + "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.sha'
           - when: ' temp.refArray[1] == "tags" '
             variables:
               - name: build.tag.sha
