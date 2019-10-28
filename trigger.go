@@ -52,6 +52,7 @@ const (
 	NAME       = "name"
 	NAMESPACE  = "namespace"
 	EVENT      = "event"
+	HEADER     = "header"
     JOBID      = "jobid"
 	TYPEINT    = "int"
 	TYPEDOUBLE = "double"
@@ -846,6 +847,60 @@ func splitCEL(strVal ref.Val, sepVal ref.Val ) ref.Val {
 	return types.NewStringList(types.DefaultTypeAdapter, arrayStr)
 }
 
+/* implementation of downlodYAML for CEL. 
+   webhookMessage: map[string]interface{} contains the original webhook message
+   fileNameVal: name of file to download
+   Return: map[string] interface{} where
+	   map["error"], if set, is the error message enccountered when reading the file.
+	   map["content"], if set, is the actual file content, of type map[string]interface{}
+*/
+func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
+	if webhookMessage.Value() == nil {
+		return types.ValOrErr(webhookMessage, "unexpected null first parameter passed to function downloadYAML.") 
+	}
+	mapInst, ok := webhookMessage.Value().(map[string]interface{})
+	if !ok {
+		return types.ValOrErr(webhookMessage, "unexpected type '%v' passed as first parameter to function downloadYAML. It should be map[string]interface{}", webhookMessage.Type())
+	}
+
+	bodyMapObj, ok := mapInst[EVENT]
+	if !ok {
+		return types.ValOrErr(webhookMessage, "Missing event parameter %v passed to downloadYAML.", webhookMessage)
+	}
+	var bodyMap map[string]interface{}
+	bodyMap, ok  = bodyMapObj.(map[string]interface{})
+	if !ok {
+		return types.ValOrErr(webhookMessage, "Event parameter %v passed to downloadYAML not map[string]interface{}. Instead, it is %T.", webhookMessage, bodyMapObj)
+	}
+
+	headerMapObj, ok := mapInst[HEADER]
+	if !ok {
+		return types.ValOrErr(webhookMessage, "Missing header parameter %v passed to downloadYAML.", webhookMessage)
+	}
+	var headerMap map[string][]string
+	headerMap, ok = headerMapObj.(map[string][]string)
+	if !ok {
+		return types.ValOrErr(webhookMessage, "Event parameter %v passed to downloadYAML not map[string][]string. Instead, it is %T.", webhookMessage, bodyMapObj)
+	}
+	
+	if fileNameVal.Value() == nil {
+		return types.ValOrErr(fileNameVal, "unexpected null second parameter passed to function downloadYAML.") 
+	}
+	fileName, ok := fileNameVal.Value().(string)
+	if !ok {
+		return types.ValOrErr(fileNameVal, "unexpected type '%v' passed as first parameter to function downloadYAML. It should be string", fileNameVal.Type())
+	}
+
+	var ret map[string]interface{} = make(map[string]interface{})
+	fileContent, _, err := downloadYAML(headerMap, bodyMap, fileName) 
+	if err != nil {
+		ret["error"] = fmt.Sprintf("%v", err)
+	} else {
+		ret["content"] = fileContent
+	}
+	return types.NewDynamicMap(types.DefaultTypeAdapter, ret)
+}
+
 /* Get declaration of additional overloaded CEL functions */
 func getAdditionalCELFuncDecls() cel.EnvOption{
 	return triggerFuncDecls
@@ -861,6 +916,8 @@ var triggerFuncs cel.ProgramOption
 
 func init() {
 	triggerFuncDecls = cel.Declarations( 
+		decls.NewFunction("downloadYAML", 
+			decls.NewOverload("downloadYAML_map_string", []*exprpb.Type{decls.NewMapType(decls.String, decls.Any), decls.String}, decls.NewMapType(decls.String, decls.Any))),
 		decls.NewFunction("toDomainName", 
 			decls.NewOverload("toDomainName_string", []*exprpb.Type{decls.String}, decls.String)),
 		decls.NewFunction("toLabel", 
@@ -869,6 +926,9 @@ func init() {
 			decls.NewOverload("split_string", []*exprpb.Type{decls.String, decls.String}, decls.NewListType(decls.String))))
 
 	triggerFuncs = cel.Functions(
+		&functions.Overload{
+	        Operator: "downloadYAML",
+	        Binary: downloadYAMLCEL} ,
 		&functions.Overload{
 	        Operator: "toDomainName",
 	        Unary: toDomainNameCEL} ,
