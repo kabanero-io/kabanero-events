@@ -40,7 +40,7 @@ variables:
             value: ' webhook.body.action '
           - name: build.pr.branch
             value: 'webhook.body.pull_request.base.ref'
-          - name: build.push.success.event
+          - name: build.pr.success.event
             value: ' { "build-status": { "repositoryEvent" : "pull_request", "status": "succeeded", "name" :  build.nameSuffix } } '
       - when: 'build.repositoryEvent == "push" '
         variables:
