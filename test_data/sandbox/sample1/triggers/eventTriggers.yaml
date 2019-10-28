@@ -40,6 +40,8 @@ variables:
             value: ' webhook.body.action '
           - name: build.pr.branch
             value: 'webhook.body.pull_request.base.ref'
+            - name: build.push.success.event
+              value: ' { "build-status": { "repositoryEvent" : "pull_request", "status": "succeeded", "name" :  build.nameSuffix } } '
       - when: 'build.repositoryEvent == "push" '
         variables:
           - name: temp.refArray
@@ -54,8 +56,6 @@ variables:
                 value: ' temp.refArray[2] '
               - name: build.push.toRegistry
                 value: ' build.registry + "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.push.sha'
-              - name: build.push.success.event
-                value: ' { "build-status": { "repositoryEvent" : "push", "status": "succeeded", "name" :  build.nameSuffix } } '
           - when: ' temp.refArray[1] == "tags" '
             variables:
               - name: build.tag.sha
