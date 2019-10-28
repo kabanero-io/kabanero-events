@@ -115,7 +115,7 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 	message[EVENT] = bodyMap // TODO: remove
 	webhook := make(map[string]interface{})
 	message[WEBHOOK] = webhook
-	webhook[HEADER] = header
+	webhook[HEADER] = map[string][]string(header)
 	webhook[BODY] = bodyMap
 	err = triggerProc.processMessage(message)
 	if err != nil {

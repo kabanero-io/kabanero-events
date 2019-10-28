@@ -499,7 +499,10 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 	case TYPEMAP:
 		mapval, ok := out.Value().(map[string]interface{})
 		if !ok {
-			return env, fmt.Errorf("Unable to cast variable %s, value %s into ma[pstring]interface{}", entireName, val)
+			_, ok := out.Value().( map[ref.Val]ref.Val)
+			if !ok {
+				return env, fmt.Errorf("Unable to cast variable %s, value %s, evaluaed value %v, type %T into map[ref.Val]ref.Val", entireName, val, out.Value(), out.Value())
+			}
 		}
 		if createNewIdent {
 			ident := decls.NewIdent(name, decls.NewMapType(decls.String, decls.Any), nil)
@@ -508,7 +511,7 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 				return  env, err
 			}
 		}
-		variables[name] = mapval
+		variables[name] = out.Value()
 		if klog.V(4) {
 			klog.Infof("variable %s set to %v", entireName, mapval)
 		}
@@ -891,7 +894,7 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
 	var headerMap map[string][]string
 	headerMap, ok = headerMapObj.(map[string][]string)
 	if !ok {
-		return types.ValOrErr(webhookMessage, "Event parameter %v passed to downloadYAML not map[string][]string. Instead, it is %T.", webhookMessage, bodyMapObj)
+		return types.ValOrErr(webhookMessage, "Parameter %v passed to downloadYAML not map[string][]string. Instead, it is %T.", headerMapObj, headerMapObj)
 	}
 	
 	if fileNameVal.Value() == nil {
@@ -942,7 +945,7 @@ func init() {
 
 	triggerFuncs = cel.Functions(
 		&functions.Overload{
-	        Operator: "jobIDCEL",
+	        Operator: "jobID",
 	        Function: jobIDCEL} ,
 		&functions.Overload{
 	        Operator: "downloadYAML",
