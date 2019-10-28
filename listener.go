@@ -112,13 +112,15 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 
 	message := make(map[string]interface{})
 	message[KABANERO] = initialVariables
-	message[EVENT] = bodyMap
-	message[HEADER] = header
+	message[EVENT] = bodyMap // TODO: remove
+	webhook := make(map[string]interface{})
+	message[WEBHOOK] = webhook
+	webhook[HEADER] = header
+	webhook[BODY] = bodyMap
 	err = triggerProc.processMessage(message)
 	if err != nil {
 		klog.Errorf("Error processing webhook message: %v", err)
 	}
-
 }
 
 

@@ -1,5 +1,5 @@
 settings:
-  dryrun: false
+  dryrun: true
 variables:
 #   Customize these
   - name: build.pr.allowedBranches
@@ -17,30 +17,38 @@ variables:
   - name: build.serviceAccount
     value: ' "appsody-sa" '
 # Setting Variqables 
-  - when: ' kabanero.eventType == "Repository" '
-    variables:
+  - when: ' has(kabanero.eventType) && kabanero.eventType == "Repository" '
+    variables: 
+      - name: build.repositoryEvent
+        value: ' webhook.header["X-Github-Event"][0] ' # push, pull_request, tag, etc
+      - name: build.jobid
+        value: ' jobID() '
+      - name: build.appsodyConfig
+        value: ' downloadYAML(webhook, ".appsody-config.yaml") '
+      - name: build.isAppsodybuild
+        value: ` has(build.appsodyConfig.content) `
       - name: build.repositoryName
-        value: 'toDomainName(event.repository.name)'
+        value: 'toDomainName(webhook.body.repository.name)'
       - name: build.nameSuffix
-        value: 'toDomainName(event.repository.owner.login + "-" + build.repositoryName + "-" + kabanero.jobid)'
-      - when: 'kabanero.repositoryEvent == "pull_request"' 
+        value: 'toDomainName(webhook.body.repository.owner.login + "-" + build.repositoryName + "-" + build.jobid)'
+      - when: 'build.repositoryEvent == "pull_request"' 
         variables:
           - name: build.pr.url
-            value: ' event.pull_request.url '
+            value: ' webhook.body.pull_request.url '
           - name: build.pr.action
-            value: ' event.action '
+            value: ' webhook.body.action '
           - name: build.pr.branch
-            value: 'event.pull_request.base.ref'
-      - when: 'kabanero.repositoryEvent == "push" '
+            value: 'webhook.body.pull_request.base.ref'
+      - when: 'build.repositoryEvent == "push" '
         variables:
           - name: temp.refArray
             value: ' split(event.ref, "/") '
           - when: ' temp.refArray[1] == "heads" '
             variables:  
               - name: build.push.sha
-                value: ' event.after '
+                value: ' webhook.body.after '
               - name: build.push.sshURL
-                value: 'event.repository.ssh_url'
+                value: 'webhook.body.repository.ssh_url'
               - name: build.push.branch
                 value: ' temp.refArray[2] '
               - name: build.push.toRegistry
@@ -48,7 +56,7 @@ variables:
           - when: ' temp.refArray[1] == "tags" '
             variables:
               - name: build.tag.sha
-                value: ' event.after '
+                value: ' webhook.body.after '
               - name: build.tag.promoteToNamespace
                 value: ' build.repositoryName + tag.promoteNamespaceSuffix '
               - name: build.tag.version

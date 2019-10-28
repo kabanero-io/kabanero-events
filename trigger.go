@@ -51,7 +51,7 @@ const (
 	KIND       = "kind"
 	NAME       = "name"
 	NAMESPACE  = "namespace"
-	EVENT      = "event"
+	EVENT      = "event" // TODO: remove
 	HEADER     = "header"
     JOBID      = "jobid"
 	TYPEINT    = "int"
@@ -61,6 +61,7 @@ const (
 	TYPELIST   = "list"
 	TYPEMAP    = "map"
 	WEBHOOK    = "webhook"
+	BODY       = "body"
 )
 
 /*
@@ -96,6 +97,9 @@ type EventTrigger struct {
 	EventTriggers []*EventTrigger `yaml:"eventTriggers,omitempty"`
 }
 
+/* 
+EventTriggerSettings contains settings for the trigger file 
+*/
 type EventTriggerSettings struct {
 	Dryrun   *bool       `yaml:"dryrun,omitempty"`
 }
@@ -847,6 +851,11 @@ func splitCEL(strVal ref.Val, sepVal ref.Val ) ref.Val {
 	return types.NewStringList(types.DefaultTypeAdapter, arrayStr)
 }
 
+/* Return next job ID */
+func jobIDCEL(values ...ref.Val) ref.Val {
+	return types.String(getTimestamp())
+}
+
 /* implementation of downlodYAML for CEL. 
    webhookMessage: map[string]interface{} contains the original webhook message
    fileNameVal: name of file to download
@@ -855,6 +864,8 @@ func splitCEL(strVal ref.Val, sepVal ref.Val ) ref.Val {
 	   map["content"], if set, is the actual file content, of type map[string]interface{}
 */
 func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
+	klog.Infof("downloadYAMLCEL first param: %v, second param: %v", webhookMessage, fileNameVal)
+
 	if webhookMessage.Value() == nil {
 		return types.ValOrErr(webhookMessage, "unexpected null first parameter passed to function downloadYAML.") 
 	}
@@ -863,7 +874,7 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
 		return types.ValOrErr(webhookMessage, "unexpected type '%v' passed as first parameter to function downloadYAML. It should be map[string]interface{}", webhookMessage.Type())
 	}
 
-	bodyMapObj, ok := mapInst[EVENT]
+	bodyMapObj, ok := mapInst[BODY]
 	if !ok {
 		return types.ValOrErr(webhookMessage, "Missing event parameter %v passed to downloadYAML.", webhookMessage)
 	}
@@ -895,8 +906,10 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
 	fileContent, _, err := downloadYAML(headerMap, bodyMap, fileName) 
 	if err != nil {
 		ret["error"] = fmt.Sprintf("%v", err)
+		klog.Infof("downloadYAMLCEI error: %v", err)
 	} else {
 		ret["content"] = fileContent
+		klog.Infof("downloadYAMLCEI content: %v", fileContent)
 	}
 	return types.NewDynamicMap(types.DefaultTypeAdapter, ret)
 }
@@ -916,6 +929,8 @@ var triggerFuncs cel.ProgramOption
 
 func init() {
 	triggerFuncDecls = cel.Declarations( 
+		decls.NewFunction("jobID", 
+			decls.NewOverload("jobID", []*exprpb.Type{}, decls.String)),
 		decls.NewFunction("downloadYAML", 
 			decls.NewOverload("downloadYAML_map_string", []*exprpb.Type{decls.NewMapType(decls.String, decls.Any), decls.String}, decls.NewMapType(decls.String, decls.Any))),
 		decls.NewFunction("toDomainName", 
@@ -926,6 +941,9 @@ func init() {
 			decls.NewOverload("split_string", []*exprpb.Type{decls.String, decls.String}, decls.NewListType(decls.String))))
 
 	triggerFuncs = cel.Functions(
+		&functions.Overload{
+	        Operator: "jobIDCEL",
+	        Function: jobIDCEL} ,
 		&functions.Overload{
 	        Operator: "downloadYAML",
 	        Binary: downloadYAMLCEL} ,
