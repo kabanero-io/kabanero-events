@@ -22,7 +22,7 @@ variables:
       - name: build.repositoryEvent
         value: ' webhook.header["X-Github-Event"][0] ' # push, pull_request, tag, etc
       - name: build.jobid
-        value: ' kabanero.jobid '
+        value: ' jobID() '
       - name: build.appsodyConfig
         value: ' downloadYAML(webhook, ".appsody-config.yaml") '
       - when: ' has(build.appsodyConfig.content) '
