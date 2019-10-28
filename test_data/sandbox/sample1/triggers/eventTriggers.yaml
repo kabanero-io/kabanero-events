@@ -26,7 +26,7 @@ variables:
       - name: build.appsodyConfig
         value: ' downloadYAML(webhook, ".appsody-config.yaml") '
       - name: build.isAppsodybuild
-        value: ` has(build.appsodyConfig.content) `
+        value: ' has(build.appsodyConfig.content) '
       - name: build.repositoryName
         value: 'toDomainName(webhook.body.repository.name)'
       - name: build.nameSuffix
