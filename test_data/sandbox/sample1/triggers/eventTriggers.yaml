@@ -25,8 +25,14 @@ variables:
         value: ' kabanero.jobid '
       - name: build.appsodyConfig
         value: ' downloadYAML(webhook, ".appsody-config.yaml") '
-      - name: build.isAppsodybuild
-        value: ' has(build.appsodyConfig.content) '
+      - when: ' has(build.appsodyConfig.content) '
+        variables:
+          - name: build.isAppsodybuild
+            value: true
+          - name: build.stack
+            value: build.appsodyConfig.content.stack  # example: kabanero/nodejs-express:2.0
+          - name: build.collectionID
+            value: ' split( split(build.stack, "/")[1], ":" )[0]' 
       - name: build.repositoryName
         value: 'toDomainName(webhook.body.repository.name)'
       - name: build.nameSuffix
