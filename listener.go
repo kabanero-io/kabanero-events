@@ -113,6 +113,7 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 	message := make(map[string]interface{})
 	message[KABANERO] = initialVariables
 	message[EVENT] = bodyMap
+	message[HEADER] = header
 	err = triggerProc.processMessage(message)
 	if err != nil {
 		klog.Errorf("Error processing webhook message: %v", err)
@@ -129,8 +130,8 @@ func newListener() error{
 	return err
 }
 
-/* Get the repository's information from from github message: name, owner, and html_url */
-func getRepositoryInfo(body map[string]interface{}) (string, string, string, error){
+/* Get the repository's information from from github message body: name, owner, and html_url */
+func getRepositoryInfo(body map[string]interface{}) (string, string, string, error) {
 	repositoryObj, ok := body["repository"]
 	if !ok {
 		return "", "", "", fmt.Errorf("Unable to find repository in webhook message")
@@ -198,6 +199,40 @@ func testGithubEnterprise() error {
 	version: 0.2
 */
 func downloadAppsodyConfig(owner, repository, githubURL, user, token string, isEnterprise bool) (string, string, string, bool, error) {
+	buf, exists, err := downloadFileFromGithub(owner, repository,".appsody-config.yaml", githubURL, user, token, isEnterprise)
+	if err != nil {
+		return "", "", "", exists, err
+	}
+
+	/* look in the yaml for: stack: kabanero/nodejs-express:0.2 */
+    appsodyConfigMap, err := yamlToMap(buf);
+    if err != nil {
+        return "", "", "", true, err
+    }
+    stack, ok := appsodyConfigMap["stack"]
+    if !ok {
+	   return "", "", "", true, fmt.Errorf(".appsody-config.yaml does not contain stack")
+    }
+    stackStr, ok := stack.(string)
+    if !ok {
+	   return "", "", "", true, fmt.Errorf(".appsody-config.yaml stack: %s is not a string", stack)
+    }
+
+	components := strings.Split(stackStr, ":")
+	if len(components) == 2 {
+		prefixName := strings.Trim(components[0], " ")
+		prefixNameArray := strings.Split(prefixName, "/")
+		if len(prefixNameArray) == 2 {
+			return prefixNameArray[0], prefixNameArray[1], components[1], true, nil
+		}
+	} 
+	return "", "", "", true, fmt.Errorf(".appsody-config.yaml contains %v.  It is not of the format stacK: prefix/name:version", stackStr)
+
+}
+
+/* Download file and return: bytes of the file, true if file texists, and any error
+*/
+func downloadFileFromGithub(owner, repository,fileName, githubURL, user, token string, isEnterprise bool) ([]byte, bool, error) {
 
 	context := context.Background()
 
@@ -218,47 +253,54 @@ func downloadAppsodyConfig(owner, repository, githubURL, user, token string, isE
 		githubURL = githubURL + "/api/v3"
 		client, err = github.NewEnterpriseClient(githubURL, githubURL, tp.Client())
 		if err != nil {
-			return "", "", "", false, err
+			return nil, false, err
 		}
 	} else {
 		client = github.NewClient(tp.Client())
 	}
 
-    rc, err := client.Repositories.DownloadContents(context, owner, repository, ".appsody-config.yaml", nil)
+    rc, err := client.Repositories.DownloadContents(context, owner, repository, fileName, nil)
     if err != nil {
 		fmt.Printf("Error type: %T, value: %v\n", err, err)
-        return "", "", "", false, err
+        return nil, false, err
     }
     defer rc.Close()
 
 	buf, err := ioutil.ReadAll(rc)
-	if  err != nil {
-		return "", "", "", false, err
-	}
-
-	/* look in the yaml for: stack: kabanero/nodejs-express:0.2 */
-    appsodyConfigMap, err := yamlToMap(buf);
-    if err != nil {
-        return "", "", "", false, err
-    }
-    stack, ok := appsodyConfigMap["stack"]
-    if !ok {
-	   return "", "", "", false, fmt.Errorf(".appsody-config.yaml does not contain stack")
-    }
-    stackStr, ok := stack.(string)
-    if !ok {
-	   return "", "", "", false, fmt.Errorf(".appsody-config.yaml stack: %s is not a string", stack)
-    }
-
-	components := strings.Split(stackStr, ":")
-	if len(components) == 2 {
-		prefixName := strings.Trim(components[0], " ")
-		prefixNameArray := strings.Split(prefixName, "/")
-		if len(prefixNameArray) == 2 {
-			return prefixNameArray[0], prefixNameArray[1], components[1], true, nil
-		}
-	} 
-	return "", "", "", false, fmt.Errorf(".appsody-config.yaml contains %v.  It is not of the format stacK: prefix/name:version", stackStr)
-
+	return buf, true, err
 }
 
+
+/* Download YAML from Repository. 
+	header: HTTP header from webhook
+	bodyMap: HTTP  message body from webhook 
+*/
+func downloadYAML(header map[string][]string, bodyMap map[string]interface{}, fileName string ) (map[string]interface{}, bool, error) {
+
+	hostHeader, isEnterprise := header[http.CanonicalHeaderKey("x-github-enterprise-host")]
+    var host string
+	if !isEnterprise {
+        host = "github.com"
+	} else {
+		host = hostHeader[0]
+	}
+
+
+	owner, name, htmlURL, err := getRepositoryInfo(bodyMap)
+	if err != nil {
+		return nil, false, fmt.Errorf("Unable to get repository owner, name, or html_url from webhook message: %v", err);
+	}
+
+    user, token , _, err := getURLAPIToken(dynamicClient, webhookNamespace, htmlURL )
+	if err != nil {
+		return nil, false, fmt.Errorf("Unable to get user/token secrets for URL %v", htmlURL);
+	}
+
+	githubURL := "https://" + host
+	bytes, found, err := downloadFileFromGithub(owner, name, fileName, githubURL, user, token, isEnterprise)
+	if err != nil {
+		return nil, found, err
+	}
+	retMap, err := yamlToMap(bytes);
+	return retMap, found, err
+}
