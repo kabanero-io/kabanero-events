@@ -26,13 +26,8 @@ variables:
       - name: build.appsodyConfig
         value: ' downloadYAML(webhook, ".appsody-config.yaml") '
       - when: ' has(build.appsodyConfig.content) '
-        variables:
-          - name: build.isAppsodybuild
-            value: true
-          - name: build.stack
-            value: build.appsodyConfig.content.stack  # example: kabanero/nodejs-express:2.0
-          - name: build.collectionID
-            value: ' split( split(build.stack, "/")[1], ":" )[0]' 
+        name: build.collectionID
+        value: ' split( split(build.appsodyConfig.content.stack, "/")[1], ":" )[0]' 
       - name: build.repositoryName
         value: 'toDomainName(webhook.body.repository.name)'
       - name: build.nameSuffix
@@ -59,6 +54,8 @@ variables:
                 value: ' temp.refArray[2] '
               - name: build.push.toRegistry
                 value: ' build.registry + "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.push.sha'
+              - name: build.push.success.event
+                value: ' { "build-status": { "repositoryEvent" : "push", "status": "succeeded", "name" :  build.nameSuffix } } '
           - when: ' temp.refArray[1] == "tags" '
             variables:
               - name: build.tag.sha
@@ -72,12 +69,12 @@ variables:
               - name: build.tag.toRegistry
                 value: 'build.registry+ "/" + tag.promoteToNamespace + "/" +  build.repositoryName + ":" + tag.version '
 eventTriggers:
-  - when: 'has(kabanero.collectionID) && has(build.push.branch) && build.push.branch in build.push.allowedBranches'
+  - when: 'has(build.collectionID) && has(build.push.branch) && build.push.branch in build.push.allowedBranches'
     action:
       applyResources:
         directory: push
   - when: |-
-      has(kabanero.collectionID) && 
+      has(build.collectionID) && 
       has(build.pr.branch) && 
       build.pr.branch in build.pr.allowedBranches  &&
       (build.pr.action == "open" || build.pr.action == "synchronize") 
