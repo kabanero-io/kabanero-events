@@ -59,6 +59,7 @@ var (
 	dynamicClient    dynamic.Interface
 	webhookNamespace string
 	triggerProc      *triggerProcessor
+	disableTLS       bool
 )
 
 func init() {
@@ -266,6 +267,7 @@ func init() {
 		flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
 	}
 	flag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
+	flag.BoolVar(&disableTLS, "disableTLS", false, "set to use non-TLS listener")
 
 	// init falgs for klog
 	klog.InitFlags(nil)
