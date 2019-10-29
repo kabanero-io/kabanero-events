@@ -32,8 +32,8 @@ variables:
         value: 'toDomainName(message.webhook.body.repository.name)'
       - name: build.nameSuffix
         value: 'toDomainName(message.webhook.body.repository.owner.login + "-" + build.repositoryName + "-" + build.jobid)'
-        - name: build.sshURL
-          value: 'message.webhook.body.repository.ssh_url'
+      - name: build.sshURL
+        value: 'message.webhook.body.repository.ssh_url'
       - when: 'build.repositoryEvent == "pull_request"' 
         variables:
           - name: build.pr.url
