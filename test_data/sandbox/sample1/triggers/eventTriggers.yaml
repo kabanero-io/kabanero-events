@@ -81,7 +81,7 @@ eventTriggers:
       has(build.collectionID) && 
       has(build.pr.branch) && 
       build.pr.branch in build.pr.allowedBranches  &&
-      (build.pr.action == "open" || build.pr.action == "synchronize") 
+      (build.pr.action == "opened" || build.pr.action == "synchronize") 
     action:
       applyResources:
         directory: pull
