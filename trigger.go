@@ -52,6 +52,7 @@ const (
 	NAME       = "name"
 	NAMESPACE  = "namespace"
 	EVENT      = "event" // TODO: remove
+	MESSAGE    = "message"
 	HEADER     = "header"
     JOBID      = "jobid"
 	TYPEINT    = "int"

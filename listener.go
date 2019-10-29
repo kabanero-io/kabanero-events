@@ -72,6 +72,7 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	/* TODO: remove */
 	owner, name, htmlURL, err := getRepositoryInfo(bodyMap)
 	if err != nil {
 		klog.Errorf("Unable to get repository owner, name, or html_url from webhook message: %v", err);
@@ -110,14 +111,18 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 		initialVariables["ref"] = refsArray
 	}
 
+	topLevelMessage := make(map[string]interface{})
+	topLevelMessage[KABANERO] = initialVariables
+	topLevelMessage[EVENT] = bodyMap // TODO: remove
+
 	message := make(map[string]interface{})
-	message[KABANERO] = initialVariables
-	message[EVENT] = bodyMap // TODO: remove
+	topLevelMessage[MESSAGE] = message
 	webhook := make(map[string]interface{})
 	message[WEBHOOK] = webhook
 	webhook[HEADER] = map[string][]string(header)
 	webhook[BODY] = bodyMap
-	err = triggerProc.processMessage(message)
+
+	err = triggerProc.processMessage(topLevelMessage)
 	if err != nil {
 		klog.Errorf("Error processing webhook message: %v", err)
 	}
