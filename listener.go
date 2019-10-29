@@ -23,12 +23,18 @@ import (
 	"io/ioutil"
 	"k8s.io/klog"
 	"github.com/google/go-github/github"
+	"os"
+
 	// "golang.org/x/oauth2"
 	"context"
 	"fmt"
 	"strings"
 )
 
+const (
+	tlsCertPath = "/etc/tls/tls.crt"
+	tlsKeyPath = "/etc/tls/tls.key"
+)
 
 
 /* HTTP listsnert */
@@ -81,7 +87,7 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 
     user, token , secretName, err := getURLAPIToken(dynamicClient, webhookNamespace, htmlURL )
 	if err != nil {
-		klog.Errorf("Unable to get user/token secrets for URL %v", htmlURL);
+		klog.Errorf("Unable to get user/token secrets for URL %v: %v", htmlURL, err);
 		return
 	}
 	initialVariables["accessTokenSecretName"] = secretName 
@@ -130,10 +136,27 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 
 
 func newListener() error{
+	http.HandleFunc("/webhook", listenerHandler)
 
-    http.HandleFunc("/webhook", listenerHandler)
+	if disableTLS {
+		klog.Infof("Starting listener on port 9080");
+		err := http.ListenAndServe(":9080", nil)
+		return err
+	}
+
+	// Setup TLS listener
+	if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
+		klog.Fatalf("TLS certificate '%s' not found: %v", tlsCertPath, err)
+		return err
+	}
+
+	if _, err := os.Stat(tlsKeyPath); os.IsNotExist(err) {
+		klog.Fatalf("TLS private key '%s' not found: %v", tlsKeyPath, err)
+		return err
+	}
+
 	klog.Infof("Starting listener on port 9443");
-    err := http.ListenAndServe(":9443", nil)
+	err := http.ListenAndServeTLS(":9443", tlsCertPath, tlsKeyPath, nil)
 	return err
 }
 

@@ -65,7 +65,7 @@ COPY --chown=1001:0 licenses/ /licenses/
 # COPY --chown=1001:0 testcntlr.sh /bin/testcntlr.sh
 USER 1001
 WORKDIR /app
-EXPOSE 8080
+EXPOSE 9443
 
 # run with log level 2
 # Note liveness/readiness probe depends on './webhook'
