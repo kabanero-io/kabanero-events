@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kabanero-test-{{.build.namesuffix}}
+  namespace: {{.build.namespace}}
+data:
+  sha: {{.build.tag.sha }}
+  promote-namespace: {{.build.tag.promoteToNamespace}}
+  tag:  {{.build.tag.version}}
+  from-registry: {{.build.tag.fromRegistry}}
+  to-registry: {{.build.tag.toRegistry}}
