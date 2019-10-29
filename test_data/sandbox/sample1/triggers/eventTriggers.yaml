@@ -32,6 +32,8 @@ variables:
         value: 'toDomainName(message.webhook.body.repository.name)'
       - name: build.nameSuffix
         value: 'toDomainName(message.webhook.body.repository.owner.login + "-" + build.repositoryName + "-" + build.jobid)'
+        - name: build.sshURL
+          value: 'message.webhook.body.repository.ssh_url'
       - when: 'build.repositoryEvent == "pull_request"' 
         variables:
           - name: build.pr.url
@@ -40,6 +42,8 @@ variables:
             value: ' message.webhook.body.action '
           - name: build.pr.branch
             value: 'message.webhook.body.pull_request.base.ref'
+          - name: build.pr.revision
+            value: ' "refs/pull/" + message.webhook.body.pull_request.number + "/head" '
           - name: build.pr.success.event
             value: ' { "build-status": { "repositoryEvent" : "pull_request", "status": "succeeded", "name" :  build.nameSuffix } } '
       - when: 'build.repositoryEvent == "push" '
@@ -50,8 +54,6 @@ variables:
             variables:  
               - name: build.push.sha
                 value: ' message.webhook.body.after '
-              - name: build.push.sshURL
-                value: 'message.webhook.body.repository.ssh_url'
               - name: build.push.branch
                 value: ' temp.refArray[2] '
               - name: build.push.toRegistry

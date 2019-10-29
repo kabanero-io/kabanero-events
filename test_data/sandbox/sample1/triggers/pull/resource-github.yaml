@@ -4,11 +4,9 @@ metadata:
   name: git-{{.build.nameSuffix}}
   namespace: {{.build.namespace}}
 spec:
-  type: pullRequest
+  type: git
   params:
     - name: url
-      value: {{.build.pr.url}}
-  secrets:
-    - fieldName: githubToken
-      secretName: {{.kabanero.accessTokenSecretName}}
-      secretKey: token
+      value: {{.build.sshURL}}
+    - name: revision
+      value: {{.build.pr.revision}}
