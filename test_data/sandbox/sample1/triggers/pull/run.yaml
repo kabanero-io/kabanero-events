@@ -11,4 +11,4 @@ spec:
     resourceRef:
       name: git-{{.build.nameSuffix}}
   serviceAccount: {{.build.serviceAccount}}
-  timeout: 1h0m0s
+  timeout: {{.build.timeout}}

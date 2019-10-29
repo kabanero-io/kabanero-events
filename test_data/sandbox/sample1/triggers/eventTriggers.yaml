@@ -16,6 +16,8 @@ variables:
     value: ' kabanero.namespace ' 
   - name: build.serviceAccount
     value: ' "appsody-sa" '
+  - name: build.timeout
+    value: ' "1h0m0s" '
 # Setting Variqables 
   - when: ' has(message.webhook)' # webhook event
     variables: 
