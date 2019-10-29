@@ -65,13 +65,13 @@ variables:
               - name: build.tag.sha
                 value: ' message.webhook.body.after '
               - name: build.tag.promoteToNamespace
-                value: ' build.repositoryName + tag.promoteNamespaceSuffix '
+                value: ' build.repositoryName + build.tag.promoteNamespaceSuffix '
               - name: build.tag.version
                 value: ' temp.refArray[2] '
               - name: build.tag.fromRegistry
-                value: ' build.registry+ "/" + build.namespace +  "/" +  build.repositoryName + ":" + tag.sha '
+                value: ' build.registry+ "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.tag.sha '
               - name: build.tag.toRegistry
-                value: 'build.registry+ "/" + tag.promoteToNamespace + "/" +  build.repositoryName + ":" + build.tag.version '
+                value: 'build.registry+ "/" + build.tag.promoteToNamespace + "/" +  build.repositoryName + ":" + build.tag.version '
 eventTriggers:
   - when: 'has(build.collectionID) && has(build.push.branch) && build.push.branch in build.push.allowedBranches'
     action:
