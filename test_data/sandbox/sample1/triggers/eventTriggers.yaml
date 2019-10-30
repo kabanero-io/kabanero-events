@@ -40,7 +40,7 @@ variables:
               + build.repositoryName 
               + "-" 
               + (build.repositoryEvent == "pull_request" ? "pr" : 
-                  (build.repositoryEvent == "push" && message.webhook.body.ref.startsWith("/refs/tags/")? "tag": 
+                  (build.repositoryEvent == "push" && message.webhook.body.ref.startsWith("refs/tags/")? "tag": 
                       build.repositoryEvent) )
               + "-" 
               + build.jobid)
