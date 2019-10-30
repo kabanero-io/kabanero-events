@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1alpha1
 kind: PipelineRun
 metadata:
-  name:  push-{{.build.nameSuffix}}
+  name:  {{.build.nameSuffix}}
   namespace: {{.build.namespace}}
 spec:
   pipelineRef:
