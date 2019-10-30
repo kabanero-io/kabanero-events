@@ -2,6 +2,7 @@ apiVersion: tekton.dev/v1alpha1
 kind: PipelineRun
 metadata:
   name: {{.build.nameSuffix}}
+  namespace: {{.build.namespace}}
 spec:
   serviceAccount: {{.build.serviceAccount}}
   timeout: 
