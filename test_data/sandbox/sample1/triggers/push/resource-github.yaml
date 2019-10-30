@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1alpha1
 kind: PipelineResource
 metadata:
-  name: git-{{.build.nameSuffix}}
+  name: git-push-{{.build.nameSuffix}}
   namespace: {{.build.namespace}}
 spec:
   params:

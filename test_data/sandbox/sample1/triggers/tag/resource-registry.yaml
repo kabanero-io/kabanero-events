@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1alpha1
 kind: PipelineResource
 metadata:
-  name: docker-push-{{.build.nameSuffix}}
+  name: docker-tag-{{.build.nameSuffix}}
   namespace: {{.build.namespace}}
 spec:
   params:

@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1alpha1
 kind: PipelineResource
 metadata:
-  name: git-{{.build.nameSuffix}}
+  name: git-pr-{{.build.nameSuffix}}
   namespace: {{.build.namespace}}
 spec:
   type: git

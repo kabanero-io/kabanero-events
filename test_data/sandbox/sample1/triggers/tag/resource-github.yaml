@@ -1,10 +1,12 @@
 apiVersion: tekton.dev/v1alpha1
 kind: PipelineResource
 metadata:
-  name: docker-push-{{.build.nameSuffix}}
+  name: git-tag-{{.build.nameSuffix}}
   namespace: {{.build.namespace}}
 spec:
   params:
+  - name: revision
+    value: {{.build.tag.sha}}
   - name: url
-    value: {{.build.push.toRegistry}}
-  type: image
+    value: {{.build.sshURL}}
+  type: git
