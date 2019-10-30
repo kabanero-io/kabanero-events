@@ -34,8 +34,16 @@ variables:
         value: 'toDomainName(message.webhook.body.repository.name)'
       - name: build.nameSuffix
         value: |-
-          toDomainName(message.webhook.body.repository.owner.login + "-" + build.repositoryName + "-" + 
-          (build.repositoryEvent == "pull_request" ? "pr" : build.repositoryEvent) + "-" + build.jobid)
+          toDomainName(
+              message.webhook.body.repository.owner.login 
+              + "-" 
+              + build.repositoryName 
+              + "-" 
+              + (build.repositoryEvent == "pull_request" ? "pr" : 
+                  (build.repositoryEvent == "push" && message.webhook.body.ref.startsWith("/refs/tags/")? "tag": 
+                      build.repositoryEvent) 
+              + "-" 
+              + build.jobid)
       - name: build.sshURL
         value: 'message.webhook.body.repository.ssh_url'
       - when: 'build.repositoryEvent == "pull_request"' 
@@ -53,7 +61,7 @@ variables:
       - when: 'build.repositoryEvent == "push" '
         variables:
           - name: temp.refArray
-            value: ' split(event.ref, "/") '
+            value: ' split(message.webhook.body.ref, "/") '
           - when: ' temp.refArray[1] == "heads" '
             variables:  
               - name: build.push.sha
