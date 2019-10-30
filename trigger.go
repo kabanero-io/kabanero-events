@@ -51,7 +51,9 @@ const (
 	KIND       = "kind"
 	NAME       = "name"
 	NAMESPACE  = "namespace"
-	EVENT      = "event"
+	EVENT      = "event" // TODO: remove
+	MESSAGE    = "message"
+	HEADER     = "header"
     JOBID      = "jobid"
 	TYPEINT    = "int"
 	TYPEDOUBLE = "double"
@@ -60,7 +62,7 @@ const (
 	TYPELIST   = "list"
 	TYPEMAP    = "map"
 	WEBHOOK    = "webhook"
-	CONTROLNAMESPACE =	"controlNamespace"
+	BODY       = "body"
 )
 
 /*
@@ -96,11 +98,18 @@ type EventTrigger struct {
 	EventTriggers []*EventTrigger `yaml:"eventTriggers,omitempty"`
 }
 
+/* 
+EventTriggerSettings contains settings for the trigger file 
+*/
+type EventTriggerSettings struct {
+	Dryrun   *bool       `yaml:"dryrun,omitempty"`
+}
+
 /*
 EventTriggerDefinition as used in the trigger file
 */
 type EventTriggerDefinition struct {
-	Dryrun   *bool       `yaml:"dryrun,omitempty"`
+    Settings *EventTriggerSettings  `yaml:"settings,omitempty"`
 	Variables []*Variable `yaml:"variables,omitempty"`
 	EventTriggers  []*EventTrigger  `yaml:"eventTriggers,omitempty"`
 }
@@ -183,7 +192,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, ) err
 		substituted = append(substituted, after)
 	}
 
-    if tp.triggerDef.Dryrun != nil && *tp.triggerDef.Dryrun {
+    if tp.triggerDef.Settings != nil && tp.triggerDef.Settings.Dryrun != nil && *tp.triggerDef.Settings.Dryrun {
 		klog.Infof("triggerProcessor: dryrun is set. Resources not created")
     } else {
 		/* Apply the files */
@@ -491,7 +500,10 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 	case TYPEMAP:
 		mapval, ok := out.Value().(map[string]interface{})
 		if !ok {
-			return env, fmt.Errorf("Unable to cast variable %s, value %s into ma[pstring]interface{}", entireName, val)
+			_, ok := out.Value().( map[ref.Val]ref.Val)
+			if !ok {
+				return env, fmt.Errorf("Unable to cast variable %s, value %s, evaluaed value %v, type %T into map[ref.Val]ref.Val", entireName, val, out.Value(), out.Value())
+			}
 		}
 		if createNewIdent {
 			ident := decls.NewIdent(name, decls.NewMapType(decls.String, decls.Any), nil)
@@ -500,7 +512,7 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 				return  env, err
 			}
 		}
-		variables[name] = mapval
+		variables[name] = out.Value()
 		if klog.V(4) {
 			klog.Infof("variable %s set to %v", entireName, mapval)
 		}
@@ -843,6 +855,69 @@ func splitCEL(strVal ref.Val, sepVal ref.Val ) ref.Val {
 	return types.NewStringList(types.DefaultTypeAdapter, arrayStr)
 }
 
+/* Return next job ID */
+func jobIDCEL(values ...ref.Val) ref.Val {
+	return types.String(getTimestamp())
+}
+
+/* implementation of downlodYAML for CEL. 
+   webhookMessage: map[string]interface{} contains the original webhook message
+   fileNameVal: name of file to download
+   Return: map[string] interface{} where
+	   map["error"], if set, is the error message enccountered when reading the file.
+	   map["content"], if set, is the actual file content, of type map[string]interface{}
+*/
+func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
+	klog.Infof("downloadYAMLCEL first param: %v, second param: %v", webhookMessage, fileNameVal)
+
+	if webhookMessage.Value() == nil {
+		return types.ValOrErr(webhookMessage, "unexpected null first parameter passed to function downloadYAML.") 
+	}
+	mapInst, ok := webhookMessage.Value().(map[string]interface{})
+	if !ok {
+		return types.ValOrErr(webhookMessage, "unexpected type '%v' passed as first parameter to function downloadYAML. It should be map[string]interface{}", webhookMessage.Type())
+	}
+
+	bodyMapObj, ok := mapInst[BODY]
+	if !ok {
+		return types.ValOrErr(webhookMessage, "Missing event parameter %v passed to downloadYAML.", webhookMessage)
+	}
+	var bodyMap map[string]interface{}
+	bodyMap, ok  = bodyMapObj.(map[string]interface{})
+	if !ok {
+		return types.ValOrErr(webhookMessage, "Event parameter %v passed to downloadYAML not map[string]interface{}. Instead, it is %T.", webhookMessage, bodyMapObj)
+	}
+
+	headerMapObj, ok := mapInst[HEADER]
+	if !ok {
+		return types.ValOrErr(webhookMessage, "Missing header parameter %v passed to downloadYAML.", webhookMessage)
+	}
+	var headerMap map[string][]string
+	headerMap, ok = headerMapObj.(map[string][]string)
+	if !ok {
+		return types.ValOrErr(webhookMessage, "Parameter %v passed to downloadYAML not map[string][]string. Instead, it is %T.", headerMapObj, headerMapObj)
+	}
+	
+	if fileNameVal.Value() == nil {
+		return types.ValOrErr(fileNameVal, "unexpected null second parameter passed to function downloadYAML.") 
+	}
+	fileName, ok := fileNameVal.Value().(string)
+	if !ok {
+		return types.ValOrErr(fileNameVal, "unexpected type '%v' passed as first parameter to function downloadYAML. It should be string", fileNameVal.Type())
+	}
+
+	var ret map[string]interface{} = make(map[string]interface{})
+	fileContent, _, err := downloadYAML(headerMap, bodyMap, fileName) 
+	if err != nil {
+		ret["error"] = fmt.Sprintf("%v", err)
+		klog.Infof("downloadYAMLCEI error: %v", err)
+	} else {
+		ret["content"] = fileContent
+		klog.Infof("downloadYAMLCEI content: %v", fileContent)
+	}
+	return types.NewDynamicMap(types.DefaultTypeAdapter, ret)
+}
+
 /* Get declaration of additional overloaded CEL functions */
 func getAdditionalCELFuncDecls() cel.EnvOption{
 	return triggerFuncDecls
@@ -858,6 +933,10 @@ var triggerFuncs cel.ProgramOption
 
 func init() {
 	triggerFuncDecls = cel.Declarations( 
+		decls.NewFunction("jobID", 
+			decls.NewOverload("jobID", []*exprpb.Type{}, decls.String)),
+		decls.NewFunction("downloadYAML", 
+			decls.NewOverload("downloadYAML_map_string", []*exprpb.Type{decls.NewMapType(decls.String, decls.Any), decls.String}, decls.NewMapType(decls.String, decls.Any))),
 		decls.NewFunction("toDomainName", 
 			decls.NewOverload("toDomainName_string", []*exprpb.Type{decls.String}, decls.String)),
 		decls.NewFunction("toLabel", 
@@ -866,6 +945,12 @@ func init() {
 			decls.NewOverload("split_string", []*exprpb.Type{decls.String, decls.String}, decls.NewListType(decls.String))))
 
 	triggerFuncs = cel.Functions(
+		&functions.Overload{
+	        Operator: "jobID",
+	        Function: jobIDCEL} ,
+		&functions.Overload{
+	        Operator: "downloadYAML",
+	        Binary: downloadYAMLCEL} ,
 		&functions.Overload{
 	        Operator: "toDomainName",
 	        Unary: toDomainNameCEL} ,
