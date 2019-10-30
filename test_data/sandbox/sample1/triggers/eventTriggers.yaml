@@ -70,7 +70,7 @@ variables:
                 value: ' temp.refArray[2] '
               - name: build.push.toRegistry
                 value: ' build.registry + "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.push.sha'
-          - when: ' temp.refArray[1] == "tags" '
+          - when: ' temp.refArray[1] == "tags" && temp.refArray[2].matches(build.tag.pattern)'
             variables:
               - name: build.tag.sha
                 value: ' message.webhook.body.after '
