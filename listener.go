@@ -43,14 +43,14 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
     header := req.Header
 	klog.Infof("Recevied request. Header: %v", header)
 
-	reposiotryEventHeader, ok := header[http.CanonicalHeaderKey("x-github-event")]
+	repositoryEventHeader, ok := header[http.CanonicalHeaderKey("x-github-event")]
 	if !ok {
 		klog.Errorf("header does not contain x-github-event. Skipping. Header content: %v", header)
 		return
 	}
     initialVariables := make(map[string]interface{})
 	initialVariables["eventType"] = "Repository"
-	initialVariables["repositoryEvent"] = reposiotryEventHeader[0]
+	initialVariables["repositoryEvent"] = repositoryEventHeader[0]
 	initialVariables["repositoryType"] = "github"
 	initialVariables[NAMESPACE] = webhookNamespace
 
@@ -58,8 +58,9 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
     var host string
 	if !isEnterprise {
         host = "github.com"
-	} 
-	host = hostHeader[0]
+	} else {
+		host = hostHeader[0]
+	}
 
 	var body io.ReadCloser = req.Body
 
