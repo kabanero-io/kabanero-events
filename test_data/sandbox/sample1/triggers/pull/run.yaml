@@ -9,6 +9,6 @@ spec:
   resources:
   - name: git-source
     resourceRef:
-      name: git-pr-{{.build.nameSuffix}}
+      name: git-{{.build.nameSuffix}}
   serviceAccount: {{.build.serviceAccount}}
   timeout: {{.build.timeout}}

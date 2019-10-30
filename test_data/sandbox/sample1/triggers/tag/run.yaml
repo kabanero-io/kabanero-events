@@ -9,9 +9,9 @@ spec:
   resources:
   - name: git-source
     resourceRef:
-      name: git-tag-{{.build.nameSuffix}}
+      name: git-{{.build.nameSuffix}}
   - name: docker-image
     resourceRef:
-      name: docker-tag-{{.build.nameSuffix}}
+      name: docker-{{.build.nameSuffix}}
   serviceAccount: {{.build.serviceAccount}}
   timeout: {{.build.timeout}}
