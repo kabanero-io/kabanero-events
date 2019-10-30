@@ -7,7 +7,7 @@ variables:
   - name: build.push.allowedBranches
     value: ' [ "master" ] '
   - name: build.tag.pattern
-    value: '"v\.[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+"'
+    value: '"v[.][[:digit:]]+[.][[:digit:]]+[.][[:digit:]]+"'
   - name: build.tag.promoteNamespaceSuffix # suffix for promoted namespace. Default is project-test.
     value: '"-test"'
   - name: build.registry
