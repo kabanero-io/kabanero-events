@@ -15,7 +15,7 @@ variables:
   - name: build.namespace
     value: ' kabanero.namespace ' 
   - name: build.serviceAccount
-    value: ' "appsody-sa" '
+    value: ' "kabanero-operator" '
   - name: build.timeout
     value: ' "1h0m0s" '
 # Setting Variqables 
