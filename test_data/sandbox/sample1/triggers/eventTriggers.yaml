@@ -44,8 +44,8 @@ variables:
                       build.repositoryEvent) )
               + "-" 
               + build.jobid)
-      - name: build.sshURL
-        value: 'message.webhook.body.repository.ssh_url'
+      - name: build.repoURL
+        value: 'message.webhook.body.repository.clone_url'
       - when: 'build.repositoryEvent == "pull_request"' 
         variables:
           - name: build.pr.url
