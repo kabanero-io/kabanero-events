@@ -1,7 +1,7 @@
 apiVersion: v2
 triggers:
  - description: triggers for this collection
-   url: https://raw.githubusercontent.com/kabanero-io/kabanero-webhook/master/test_data/sandbox/sample1/sample1.tar.gz
+   url: https://raw.githubusercontent.com/kabanero-io/kabanero-webhook/trigger/test_data/sandbox/sample1/sample1.tar.gz
 stacks:
 - default-image: java-microprofile
   default-pipeline: default
