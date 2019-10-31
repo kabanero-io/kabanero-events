@@ -43,24 +43,8 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
     header := req.Header
 	klog.Infof("Recevied request. Header: %v", header)
 
-	repositoryEventHeader, ok := header[http.CanonicalHeaderKey("x-github-event")]
-	if !ok {
-		klog.Errorf("header does not contain x-github-event. Skipping. Header content: %v", header)
-		return
-	}
     initialVariables := make(map[string]interface{})
-	initialVariables["eventType"] = "Repository"
-	initialVariables["repositoryEvent"] = repositoryEventHeader[0]
-	initialVariables["repositoryType"] = "github"
 	initialVariables[NAMESPACE] = webhookNamespace
-
-	hostHeader, isEnterprise := header[http.CanonicalHeaderKey("x-github-enterprise-host")]
-    var host string
-	if !isEnterprise {
-        host = "github.com"
-	} else {
-		host = hostHeader[0]
-	}
 
 	var body io.ReadCloser = req.Body
 
@@ -79,53 +63,15 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	/* TODO: remove */
-	owner, name, htmlURL, err := getRepositoryInfo(bodyMap)
-	if err != nil {
-		klog.Errorf("Unable to get repository owner, name, or html_url from webhook message: %v", err);
-		return
-	}
-
-    user, token , secretName, err := getURLAPIToken(dynamicClient, webhookNamespace, htmlURL )
-	if err != nil {
-		klog.Errorf("Unable to get user/token secrets for URL %v: %v", htmlURL, err);
-		return
-	}
-	initialVariables["accessTokenSecretName"] = secretName 
-
-	githubURL := "https://" + host
-	collectionPrefix, collectionID, collectionVersion, found, err := downloadAppsodyConfig(owner, name, githubURL, user, token, isEnterprise)
-	if err != nil {
-		klog.Errorf("Error checking whether repository is appsody: %v", err);
-		return
-	}
-	if found {
-		initialVariables["collectionPrefix"] = collectionPrefix
-		initialVariables["collectionID"] = collectionID
-		initialVariables["collectionVersion"] = collectionVersion
-	}
-
-	// get the refs if they exist
-	/* TODO: remove setting "ref".  */
-	refsObj, ok := bodyMap["ref"]
-	if ok {
-		refs, ok := refsObj.(string)
-		if !ok {
-			klog.Errorf("Found refs, but it is not a string: %v", refs);
-			return
-		}
-		refsArray := strings.Split(refs, "/")
-		initialVariables["ref"] = refsArray
-	}
-
 	topLevelMessage := make(map[string]interface{})
 	topLevelMessage[KABANERO] = initialVariables
-	topLevelMessage[EVENT] = bodyMap // TODO: remove
 
 	message := make(map[string]interface{})
 	topLevelMessage[MESSAGE] = message
+
 	webhook := make(map[string]interface{})
 	message[WEBHOOK] = webhook
+
 	webhook[HEADER] = map[string][]string(header)
 	webhook[BODY] = bodyMap
 
