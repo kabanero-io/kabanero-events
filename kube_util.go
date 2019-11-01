@@ -36,9 +36,11 @@ const (
 	KABANEROIO                 = "kabanero.io"
 	KABANERO                   = "kabanero"
 	KABANEROS                  = "kabaneros"
+	ANNOTATIONS                = "annotations"
 	DATA                       = "data"
 	URL                        = "url"
 	USERNAME                   = "username"
+	PASSWORD                   = "password"
 	TOKEN                      = "token"
 	SECRETS                    = "secrets"
 	SPEC                       = "spec"
@@ -74,6 +76,9 @@ data:
 Return: username, token, secret name, error
 */
 func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, string, error) {
+	if klog.V(5) {
+		klog.Infof("getURLAPIToken namespace: %s, repoURL: %s", namespace, repoURL)
+	}
 	gvr := schema.GroupVersionResource{
 		Group:    "",
 		Version:  V1,
@@ -104,6 +109,46 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 			continue
 		}
 
+		annotationsObj, ok := metadata[ANNOTATIONS]
+		if !ok {
+			continue
+		}
+
+		annotations, ok := annotationsObj.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		tektonList := make([]string,0)
+		kabaneroList := make([]string, 0)
+		for key, val := range annotations {
+			if strings.HasPrefix(key, "kabanero.io/git-") {
+				url, ok := val.(string)
+				if ok {
+					kabaneroList = append(kabaneroList, url)
+				}
+			} else if strings.HasPrefix(key, "tekton.dev/git-") {
+				url, ok := val.(string)
+				if ok {
+					tektonList = append(tektonList, url)
+				}
+			}
+		}
+
+		/* find that annotation that is a match */
+		urlMatched, matchedURL := matchPrefix(repoURL, kabaneroList) 
+		if !urlMatched {
+			urlMatched, matchedURL = matchPrefix(repoURL, tektonList) 
+		}
+		if !urlMatched {
+			/* no match */
+			continue
+		}
+		if klog.V(5) {
+			klog.Infof("getURLAPIToken found match %v", matchedURL)
+		}
+		
+
         nameObj, ok := metadata["name"]
         if !ok {
             continue
@@ -123,25 +168,6 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 			continue
 		}
 
-		urlObj, ok := dataMap[URL]
-		if !ok {
-			continue
-		}
-		url, ok := urlObj.(string)
-		if !ok {
-			continue
-		}
-		decodedURLBytes, err := base64.StdEncoding.DecodeString(url)
-		if err != nil {
-			return "", "", "", err
-		}
-
-		decodedURL := string(decodedURLBytes)
-		if !strings.HasPrefix(repoURL, decodedURL) {
-			/* not for this uRL */
-			continue
-		}
-
 		usernameObj, ok := dataMap[USERNAME]
 		if !ok {
 			continue
@@ -151,7 +177,7 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 			continue
 		}
 
-		tokenObj, ok := dataMap[TOKEN]
+		tokenObj, ok := dataMap[PASSWORD]
 		if !ok {
 			continue
 		}
@@ -173,6 +199,25 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 	}
 	return "", "", "", fmt.Errorf("Unable to find API token for url: %s", repoURL)
 }
+
+
+/* 
+ Input:
+	str: input string
+	arrStr: input array of string
+ Return: 
+	true if any element of arrStr is a prefix of str
+	the first element of arrStr that is a prefix of str
+ */
+func matchPrefix(str string, arrStr [] string) (bool, string) {
+	for _, val := range arrStr  {
+		if strings.HasPrefix(str, val) {
+			return true, val
+		}
+	}
+	return false, ""
+}
+
 
 /* Get the URL to kabanero-index.yaml
  */

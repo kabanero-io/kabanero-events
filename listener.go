@@ -43,9 +43,6 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
     header := req.Header
 	klog.Infof("Recevied request. Header: %v", header)
 
-    initialVariables := make(map[string]interface{})
-	initialVariables[NAMESPACE] = webhookNamespace
-
 	var body io.ReadCloser = req.Body
 
 	defer body.Close()
@@ -64,7 +61,6 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	topLevelMessage := make(map[string]interface{})
-	topLevelMessage[KABANERO] = initialVariables
 
 	message := make(map[string]interface{})
 	topLevelMessage[MESSAGE] = message
@@ -107,54 +103,95 @@ func newListener() error{
 	return err
 }
 
-/* Get the repository's information from from github message body: name, owner, and html_url */
-func getRepositoryInfo(body map[string]interface{}) (string, string, string, error) {
+/* Get the repository's information from from github message body: name, owner, html_url, and ref */
+func getRepositoryInfo(body map[string]interface{}, repositoryEvent string) (string, string, string, string, error) {
+
+	ref := ""
+	if repositoryEvent == "push" {
+		// use SHA for ref
+		afterObj, ok := body["after"]
+		if !ok {
+			return "", "", "", "", fmt.Errorf("Unable to find after for push webhook message")
+		}
+		ref, ok = afterObj.(string)
+		if !ok {
+			return "", "", "", "", fmt.Errorf("after for push webhook message (%s) is not a string but %T", afterObj, afterObj)
+		}
+	} else if repositoryEvent == "pull_request" {
+		// use pull_request.head.sha
+		prObj, ok := body["pull_request"]
+		if !ok {
+			return "", "", "", "", fmt.Errorf("Unable to find pull_request in webhook message")
+		}
+		prMap, ok := prObj.(map[string]interface{})
+		if !ok {
+			return "", "", "", "", fmt.Errorf("pull_request in webhook message is of type %T, not map[string]interface{}", prObj)
+		}
+		headObj, ok := prMap["head"]
+		if !ok {
+			return "", "", "", "", fmt.Errorf("pull_request in webhook message does not contain head")
+		}
+		head, ok := headObj.(map[string]interface{})
+		if !ok {
+			return "", "", "", "", fmt.Errorf("pull_request head not map[string]interface{}, but is %T", headObj)
+		}
+
+		shaObj, ok := head["sha"]
+		if !ok {
+			return "", "", "", "", fmt.Errorf("pull_request.head.sha not found")
+		}
+		ref, ok = shaObj.(string)
+		if !ok {
+			return "", "", "", "", fmt.Errorf("pull_request merge_commit_sha in webhook message not a string: %v", shaObj)
+		}
+	}
+
 	repositoryObj, ok := body["repository"]
 	if !ok {
-		return "", "", "", fmt.Errorf("Unable to find repository in webhook message")
+		return "", "", "", "", fmt.Errorf("Unable to find repository in webhook message")
 	}
 	repository, ok := repositoryObj.(map[string]interface{})
 	if !ok {
-		return "", "", "", fmt.Errorf("webhook message repository object not map[string]interface{}: %v", repositoryObj)
+		return "", "", "", "", fmt.Errorf("webhook message repository object not map[string]interface{}: %v", repositoryObj)
 	}
 
 	nameObj, ok := repository["name"]
 	if !ok {
-		return "", "", "", fmt.Errorf("webhook message repository name not found")
+		return "", "", "", "", fmt.Errorf("webhook message repository name not found")
 	}
 	name, ok := nameObj.(string)
 	if !ok {
-		return "", "", "", fmt.Errorf("webhook message repository name not a string: %v", nameObj)
+		return "", "", "", "", fmt.Errorf("webhook message repository name not a string: %v", nameObj)
 	}
 
 	ownerMapObj, ok := repository["owner"]
 	if !ok {
-		return "", "", "", fmt.Errorf("webhook message repository owner not found")
+		return "", "", "", "", fmt.Errorf("webhook message repository owner not found")
 	}
 	ownerMap, ok := ownerMapObj.(map[string]interface{})
 	if !ok {
-		return "", "", "", fmt.Errorf("webhook message repository owner object not map[string]interface{}: %v", ownerMapObj)
+		return "", "", "", "", fmt.Errorf("webhook message repository owner object not map[string]interface{}: %v", ownerMapObj)
 	}
 	ownerObj, ok := ownerMap["login"]
 	if !ok {
-		return "", "", "", fmt.Errorf("webhook message repository owner login not found")
+		return "", "", "", "", fmt.Errorf("webhook message repository owner login not found")
 	}
 	owner, ok := ownerObj.(string)
 	if !ok {
-		return "", "", "", fmt.Errorf("webhook message repository owner login not string : %v", ownerObj)
+		return "", "", "", "", fmt.Errorf("webhook message repository owner login not string : %v", ownerObj)
 	}
 
 
 	htmlURLObj, ok := repository["html_url"]
 	if !ok {
-		return "", "", "", fmt.Errorf("webhook message repository html_url not found")
+		return "", "", "", "", fmt.Errorf("webhook message repository html_url not found")
 	}
 	htmlURL, ok := htmlURLObj.(string)
 	if !ok {
-		return "", "", "", fmt.Errorf("webhook message html_url not string: %v", htmlURL)
+		return "", "", "", "", fmt.Errorf("webhook message html_url not string: %v", htmlURL)
 	}
 
-	return owner, name,  htmlURL, nil
+	return owner, name,  htmlURL, ref, nil
 }
 
 
@@ -175,10 +212,14 @@ func testGithubEnterprise() error {
 	collection: nodejs-express
 	version: 0.2
 */
-func downloadAppsodyConfig(owner, repository, githubURL, user, token string, isEnterprise bool) (string, string, string, bool, error) {
-	buf, exists, err := downloadFileFromGithub(owner, repository,".appsody-config.yaml", githubURL, user, token, isEnterprise)
+func downloadAppsodyConfig(owner, repository, githubURL, ref, user, token string, isEnterprise bool) (string, string, string, bool, error) {
+	buf, exists, err := downloadFileFromGithub(owner, repository,".appsody-config.yaml", ref, githubURL, user, token, isEnterprise)
 	if err != nil {
 		return "", "", "", exists, err
+	}
+
+	if !exists {
+		return "", "", "", exists, nil
 	}
 
 	/* look in the yaml for: stack: kabanero/nodejs-express:0.2 */
@@ -209,7 +250,11 @@ func downloadAppsodyConfig(owner, repository, githubURL, user, token string, isE
 
 /* Download file and return: bytes of the file, true if file texists, and any error
 */
-func downloadFileFromGithub(owner, repository,fileName, githubURL, user, token string, isEnterprise bool) ([]byte, bool, error) {
+func downloadFileFromGithub(owner, repository,fileName, ref, githubURL, user, token string, isEnterprise bool) ([]byte, bool, error) {
+
+	if klog.V(5){
+		klog.Infof("downloadFileFromGithub %v, %v, %v, %v, %v, %v, %v", owner, repository, fileName, ref, githubURL, user, isEnterprise)
+	}
 
 	context := context.Background()
 
@@ -236,15 +281,45 @@ func downloadFileFromGithub(owner, repository,fileName, githubURL, user, token s
 		client = github.NewClient(tp.Client())
 	}
 
-    rc, err := client.Repositories.DownloadContents(context, owner, repository, fileName, nil)
+	var options *github.RepositoryContentGetOptions = nil
+	if ref != "" {
+		options = &github.RepositoryContentGetOptions{ ref }
+	}
+
+/*
+    rc, err := client.Repositories.DownloadContents(context, owner, repository, fileName, options)
     if err != nil {
 		fmt.Printf("Error type: %T, value: %v\n", err, err)
         return nil, false, err
     }
     defer rc.Close()
-
 	buf, err := ioutil.ReadAll(rc)
-	return buf, true, err
+*/
+	fileContent, _, resp, err := client.Repositories.GetContents(context, owner, repository, fileName, options)
+	if resp.Response.StatusCode == 200 {
+		if fileContent != nil {
+			if fileContent.Content == nil {
+				return nil, true, fmt.Errorf("Content for %v/%v/%v is nil" , owner, repository, fileName)
+			} 
+
+			content, err := fileContent.GetContent()
+			if err != nil {
+				klog.Infof("download File Form Github error %v", err)
+			} else {
+				klog.Infof("download File from Github: buffer %v", content)
+			}
+			return []byte(content), true, err
+		} 
+		/* some other errors */
+		return nil, false, fmt.Errorf("unable to download %v/%v/%v: not a file" , owner, repository, fileName)
+	} else if resp.Response.StatusCode == 400 {
+		/* does not exist */
+		return nil, false, nil
+	} else {
+		/* some other errors */
+		return nil, false, fmt.Errorf("unable to download %v/%v/%v, http error %v", owner, repository, fileName, resp.Response.Status)
+	}
+
 }
 
 
@@ -262,8 +337,9 @@ func downloadYAML(header map[string][]string, bodyMap map[string]interface{}, fi
 		host = hostHeader[0]
 	}
 
+	repositoryEvent := header["X-Github-Event"][0]
 
-	owner, name, htmlURL, err := getRepositoryInfo(bodyMap)
+	owner, name, htmlURL, ref, err := getRepositoryInfo(bodyMap, repositoryEvent)
 	if err != nil {
 		return nil, false, fmt.Errorf("Unable to get repository owner, name, or html_url from webhook message: %v", err);
 	}
@@ -274,7 +350,9 @@ func downloadYAML(header map[string][]string, bodyMap map[string]interface{}, fi
 	}
 
 	githubURL := "https://" + host
-	bytes, found, err := downloadFileFromGithub(owner, name, fileName, githubURL, user, token, isEnterprise)
+
+
+	bytes, found, err := downloadFileFromGithub(owner, name, fileName, ref, githubURL, user, token, isEnterprise)
 	if err != nil {
 		return nil, found, err
 	}
