@@ -326,7 +326,7 @@ func evaluateVariable(env cel.Env, triggerVar *Variable,  variables map[string]i
 			return env, err
 		}
 	}
-	if klog.V(5) {
+	if klog.V(7) {
 		klog.Infof("After evaluating variable name: %s, value: %s, variables contains: %#v", triggerVar.Name, triggerVar.Value, variables)
 
 	}
@@ -860,11 +860,20 @@ func jobIDCEL(values ...ref.Val) ref.Val {
 	return types.String(getTimestamp())
 }
 
+
+/* Return next job ID */
+func kabaneroConfigCEL(values ...ref.Val) ref.Val {
+    ret := make(map[string]interface{})
+	ret[NAMESPACE] = webhookNamespace
+	return types.NewDynamicMap(types.DefaultTypeAdapter, ret)
+}
+
 /* implementation of downlodYAML for CEL. 
    webhookMessage: map[string]interface{} contains the original webhook message
    fileNameVal: name of file to download
    Return: map[string] interface{} where
 	   map["error"], if set, is the error message enccountered when reading the file.
+       map["exists"] is true if the file exists, or false if it doesn't exist
 	   map["content"], if set, is the actual file content, of type map[string]interface{}
 */
 func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
@@ -907,13 +916,18 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
 	}
 
 	var ret map[string]interface{} = make(map[string]interface{})
-	fileContent, _, err := downloadYAML(headerMap, bodyMap, fileName) 
+	fileContent, exists , err := downloadYAML(headerMap, bodyMap, fileName) 
+	ret["exists"] = exists
 	if err != nil {
 		ret["error"] = fmt.Sprintf("%v", err)
-		klog.Infof("downloadYAMLCEI error: %v", err)
+		if klog.V(5) {
+			klog.Infof("downloadYAMLCEI error: %v", err)
+		}
 	} else {
 		ret["content"] = fileContent
-		klog.Infof("downloadYAMLCEI content: %v", fileContent)
+		if klog.V(5) {
+			klog.Infof("downloadYAMLCEI content: %v", fileContent)
+		}
 	}
 	return types.NewDynamicMap(types.DefaultTypeAdapter, ret)
 }
@@ -932,7 +946,9 @@ var triggerFuncDecls cel.EnvOption
 var triggerFuncs cel.ProgramOption
 
 func init() {
-	triggerFuncDecls = cel.Declarations( 
+	triggerFuncDecls = cel.Declarations (
+		decls.NewFunction("kabaneroConfig", 
+			decls.NewOverload("kabaneroConfig", []*exprpb.Type{}, decls.NewMapType(decls.String, decls.Any))),
 		decls.NewFunction("jobID", 
 			decls.NewOverload("jobID", []*exprpb.Type{}, decls.String)),
 		decls.NewFunction("downloadYAML", 
@@ -945,6 +961,9 @@ func init() {
 			decls.NewOverload("split_string", []*exprpb.Type{decls.String, decls.String}, decls.NewListType(decls.String))))
 
 	triggerFuncs = cel.Functions(
+		&functions.Overload{
+	        Operator: "kabaneroConfig",
+	        Function: kabaneroConfigCEL} ,
 		&functions.Overload{
 	        Operator: "jobID",
 	        Function: jobIDCEL} ,

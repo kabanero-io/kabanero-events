@@ -19,6 +19,8 @@ variables:
   - name: build.timeout
     value: ' "1h0m0s" '
 # Setting Variqables 
+  - name: kabanero
+    value: 'kabaneroConfig()'
   - when: ' has(message.webhook)' # webhook event
     variables: 
       - name: build.repositoryEvent

@@ -36,9 +36,11 @@ const (
 	KABANEROIO                 = "kabanero.io"
 	KABANERO                   = "kabanero"
 	KABANEROS                  = "kabaneros"
+	ANNOTATIONS                = "annotations"
 	DATA                       = "data"
 	URL                        = "url"
 	USERNAME                   = "username"
+	PASSWORD                   = "password"
 	TOKEN                      = "token"
 	SECRETS                    = "secrets"
 	SPEC                       = "spec"
@@ -74,6 +76,9 @@ data:
 Return: username, token, secret name, error
 */
 func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, string, error) {
+	if klog.V(5) {
+		klog.Infof("getURLAPIToken namespace: %s, repoURL: %s", namespace, repoURL)
+	}
 	gvr := schema.GroupVersionResource{
 		Group:    "",
 		Version:  V1,
@@ -104,6 +109,36 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 			continue
 		}
 
+		annotationsObj, ok := metadata[ANNOTATIONS]
+		if !ok {
+			continue
+		}
+
+		annotations, ok := annotationsObj.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		urlMatched := false
+		for key, val := range(annotations) {
+			if strings.HasPrefix(key, "kabanero.io/git-") {
+				url, ok := val.(string)
+				if ok {
+					if strings.HasPrefix(repoURL, url) {
+						if klog.V(5) {
+							klog.Infof("getURLAPIToken found match %v", url)
+						}
+						urlMatched = true
+						break
+					}
+				}
+			}
+		}
+		if !urlMatched {
+			continue
+		}
+
+
         nameObj, ok := metadata["name"]
         if !ok {
             continue
@@ -123,25 +158,6 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 			continue
 		}
 
-		urlObj, ok := dataMap[URL]
-		if !ok {
-			continue
-		}
-		url, ok := urlObj.(string)
-		if !ok {
-			continue
-		}
-		decodedURLBytes, err := base64.StdEncoding.DecodeString(url)
-		if err != nil {
-			return "", "", "", err
-		}
-
-		decodedURL := string(decodedURLBytes)
-		if !strings.HasPrefix(repoURL, decodedURL) {
-			/* not for this uRL */
-			continue
-		}
-
 		usernameObj, ok := dataMap[USERNAME]
 		if !ok {
 			continue
@@ -151,7 +167,7 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 			continue
 		}
 
-		tokenObj, ok := dataMap[TOKEN]
+		tokenObj, ok := dataMap[PASSWORD]
 		if !ok {
 			continue
 		}
