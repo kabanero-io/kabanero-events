@@ -119,25 +119,35 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 			continue
 		}
 
-		urlMatched := false
-		for key, val := range(annotations) {
+		tektonList := make([]string,0)
+		kabaneroList := make([]string, 0)
+		for key, val := range annotations {
 			if strings.HasPrefix(key, "kabanero.io/git-") {
 				url, ok := val.(string)
 				if ok {
-					if strings.HasPrefix(repoURL, url) {
-						if klog.V(5) {
-							klog.Infof("getURLAPIToken found match %v", url)
-						}
-						urlMatched = true
-						break
-					}
+					kabaneroList = append(kabaneroList, url)
+				}
+			} else if strings.HasPrefix(key, "tekton.dev/git-") {
+				url, ok := val.(string)
+				if ok {
+					tektonList = append(tektonList, url)
 				}
 			}
 		}
+
+		/* find that annotation that is a match */
+		urlMatched, matchedURL := matchPrefix(repoURL, kabaneroList) 
 		if !urlMatched {
+			urlMatched, matchedURL = matchPrefix(repoURL, tektonList) 
+		}
+		if !urlMatched {
+			/* no match */
 			continue
 		}
-
+		if klog.V(5) {
+			klog.Infof("getURLAPIToken found match %v", matchedURL)
+		}
+		
 
         nameObj, ok := metadata["name"]
         if !ok {
@@ -189,6 +199,25 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 	}
 	return "", "", "", fmt.Errorf("Unable to find API token for url: %s", repoURL)
 }
+
+
+/* 
+ Input:
+	str: input string
+	arrStr: input array of string
+ Return: 
+	true if any element of arrStr is a prefix of str
+	the first element of arrStr that is a prefix of str
+ */
+func matchPrefix(str string, arrStr [] string) (bool, string) {
+	for _, val := range arrStr  {
+		if strings.HasPrefix(str, val) {
+			return true, val
+		}
+	}
+	return false, ""
+}
+
 
 /* Get the URL to kabanero-index.yaml
  */
