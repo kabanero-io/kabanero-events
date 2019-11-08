@@ -50,16 +50,17 @@ const (
 )
 
 var (
-	masterURL        string          // URL of Kube master
-	kubeconfig       string          // path to kube config file. default <home>/.kube/config
-	klogFlags        *flag.FlagSet   // flagset for logging
-	gitHubListener   *GitHubListener // Listens for and handles GH events
-	kubeClient       *kubernetes.Clientset
-	discClient       *discovery.DiscoveryClient
-	dynamicClient    dynamic.Interface
-	webhookNamespace string
-	triggerProc      *triggerProcessor
-	disableTLS       bool
+	masterURL            string                      // URL of Kube master
+	kubeconfig           string                      // path to kube config file. default <home>/.kube/config
+	klogFlags            *flag.FlagSet               // flagset for logging
+	gitHubListener       *GitHubListener             // Listens for and handles GH events
+	kubeClient           *kubernetes.Clientset
+	discClient           *discovery.DiscoveryClient
+	dynamicClient        dynamic.Interface
+	webhookNamespace     string
+	triggerProc          *triggerProcessor
+	disableTLS           bool                        // Option to disable TLS listener
+	skipChkSumVerify     bool                        // Option to skip verification of SHA256 checksum of trigger collection
 )
 
 func init() {
@@ -268,6 +269,7 @@ func init() {
 	}
 	flag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
 	flag.BoolVar(&disableTLS, "disableTLS", false, "set to use non-TLS listener")
+	flag.BoolVar(&skipChkSumVerify, "skipChecksumVerify", false, "set to skip the verification of trigger collection checksum")
 
 	// init falgs for klog
 	klog.InitFlags(nil)

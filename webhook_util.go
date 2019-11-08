@@ -301,18 +301,20 @@ func downloadTrigger(kabaneroIndexURL string, dir string) error {
 	}
 
 	// Verify that the checksum matches the value found in kabanero-index.yaml
-	chkSum, err := sha256sum(triggerArchiveName)
-	if err != nil {
-		return fmt.Errorf("unable to calculate checksum of file %s: %s", triggerArchiveName, err)
-	}
+	if !skipChkSumVerify {
+		chkSum, err := sha256sum(triggerArchiveName)
+		if err != nil {
+			return fmt.Errorf("unable to calculate checksum of file %s: %s", triggerArchiveName, err)
+		}
 
-	if klog.V(5) {
-		klog.Infof("Calculated sha256 checksum of file %s: %s", triggerArchiveName, chkSum)
-	}
+		if klog.V(5) {
+			klog.Infof("Calculated sha256 checksum of file %s: %s", triggerArchiveName, chkSum)
+		}
 
-	if chkSum != triggerChkSum {
-		klog.Fatalf("trigger collection checksum does not match the checksum from the Kabanero index: found: %s, expected: %s",
-			chkSum, triggerChkSum)
+		if chkSum != triggerChkSum {
+			klog.Fatalf("trigger collection checksum does not match the checksum from the Kabanero index: found: %s, expected: %s",
+				chkSum, triggerChkSum)
+		}
 	}
 
 	// Untar the triggers collection
