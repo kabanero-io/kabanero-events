@@ -50,16 +50,17 @@ const (
 )
 
 var (
-	masterURL        string          // URL of Kube master
-	kubeconfig       string          // path to kube config file. default <home>/.kube/config
-	klogFlags        *flag.FlagSet   // flagset for logging
-	gitHubListener   *GitHubListener // Listens for and handles GH events
-	kubeClient       *kubernetes.Clientset
-	discClient       *discovery.DiscoveryClient
-	dynamicClient    dynamic.Interface
-	webhookNamespace string
-	triggerProc      *triggerProcessor
-	disableTLS       bool
+	masterURL            string                      // URL of Kube master
+	kubeconfig           string                      // path to kube config file. default <home>/.kube/config
+	klogFlags            *flag.FlagSet               // flagset for logging
+	gitHubListener       *GitHubListener             // Listens for and handles GH events
+	kubeClient           *kubernetes.Clientset
+	discClient           *discovery.DiscoveryClient
+	dynamicClient        dynamic.Interface
+	webhookNamespace     string
+	triggerProc          *triggerProcessor
+	disableTLS           bool                        // Option to disable TLS listener
+	skipChkSumVerify     bool                        // Option to skip verification of SHA256 checksum of trigger collection
 )
 
 func init() {
@@ -122,7 +123,7 @@ func main() {
 		// not overriden, use the one in the kabanero CRD
 		kabaneroIndexURL, err = getKabaneroIndexURL(dynamicClient, webhookNamespace)
 		if err != nil {
-			klog.Fatal(fmt.Errorf("Unable to get kabanero index URL from kabanero CRD. Error: %s", err))
+			klog.Fatal(fmt.Errorf("unable to get kabanero index URL from kabanero CRD. Error: %s", err))
 		}
 	} else {
 		klog.Infof("Using value of KABANERO_INDEX_URL environment variable to fetch kabanero index from: %s", kabaneroIndexURL)
@@ -131,20 +132,20 @@ func main() {
 	/* Download the trigger into temp directory */
 	dir, err := ioutil.TempDir("", "webhook")
 	if err != nil {
-		klog.Fatal(fmt.Errorf("Unable to create temproary directory. Error: %s", err))
+		klog.Fatal(fmt.Errorf("unable to create temproary directory. Error: %s", err))
 	}
 	defer os.RemoveAll(dir)
 
 	err = downloadTrigger(kabaneroIndexURL, dir)
 	if err != nil {
-		klog.Fatal(fmt.Errorf("Unable to download trigger pointed by kabanero_index_url at: %s, error: %s", kabaneroIndexURL, err))
+		klog.Fatal(fmt.Errorf("unable to download trigger pointed by kabanero_index_url at: %s, error: %s", kabaneroIndexURL, err))
 	}
 
 	triggerFileName := filepath.Join(dir, "eventTriggers.yaml")
 	triggerProc = &triggerProcessor{}
 	err = triggerProc.initialize(triggerFileName)
 	if err != nil {
-		klog.Fatal(fmt.Errorf("Unable to initialize trigger definition: %s", err))
+		klog.Fatal(fmt.Errorf("unable to initialize trigger definition: %s", err))
 	}
 
 	// gvr := schema.GroupVersionResource { Group: "app.k8s.io", Version: "v1beta1", Resource: "applications" }
@@ -268,6 +269,7 @@ func init() {
 	}
 	flag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
 	flag.BoolVar(&disableTLS, "disableTLS", false, "set to use non-TLS listener")
+	flag.BoolVar(&skipChkSumVerify, "skipChecksumVerify", false, "set to skip the verification of trigger collection checksum")
 
 	// init falgs for klog
 	klog.InitFlags(nil)
