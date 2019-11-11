@@ -19,6 +19,7 @@ const (
 	TRIGGER3 = "test_data/trigger3.yaml"
 	TRIGGER4 = "test_data/trigger4.yaml"
 	TRIGGER5 = "test_data/trigger5.yaml"
+	TRIGGER6 = "test_data/trigger6.yaml"
 )
 
 /* Simaple test to read data structure*/
@@ -588,4 +589,55 @@ func TestDoubleNestedCELVariables(t *testing.T) {
 	if nestedVariableResult != afterSubstitution {
 		t.Fatalf("template substitution is not as expected: Expecting: '%s', but received: '%s'", nestedVariableResult,afterSubstitution)
 	}
+}
+
+
+func TestSwitch(t *testing.T) {
+	srcEvents := [][] byte {
+		[]byte(`{"attr1": "string1", "attr2": "string2"}`),
+		[]byte(`{"attr1": "string1a", "attr2": "string2"}`),
+		[]byte(`{"attr1": "string1", "attr2": "string2a"}`),
+		[]byte(`{"attr1": "string1a", "attr2": "string2a"}`),
+	}
+
+	tp := newTriggerProcessor()
+	err := tp.initialize(TRIGGER6)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedDirs := []string{
+		"string1string2", "notstring1string2", "string1notstring2", "notstring1notstring2",
+	}
+
+	for index, srcBytes := range srcEvents {
+		if err = testOneSwitch(tp, srcBytes, expectedDirs[index]); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func testOneSwitch(tp *triggerProcessor, srcEvent []byte, expectedDirectory  string) error {
+	var event map[string]interface{}
+	err := json.Unmarshal(srcEvent, &event)
+	if err != nil {
+		return err
+	}
+
+
+	variablesArray, err := tp.processMessage(event, "default")
+	if err != nil {
+		return err
+	}
+
+	variables := variablesArray[0]
+	dir, ok := variables["directory"]
+	if !ok {
+		return fmt.Errorf("Unable to locate variable directory")
+	}
+	if dir != expectedDirectory {
+		return fmt.Errorf("directory value %v is not expected value %s", dir, expectedDirectory)
+	}
+
+	return nil
 }

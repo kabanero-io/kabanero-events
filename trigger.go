@@ -141,17 +141,48 @@ const (
 	FUNCTIONS   = "functions"
 )
 
+const (
+	// IfFlag is flag for If statement
+	IfFlag uint = 1<< iota  
+	// SwitchFlag is flag for switch statement
+	SwitchFlag
+	// DefaultFlag is flag for default statement
+	DefaultFlag
+	// BodyFlag is flag for body statement
+	BodyFlag
+)
 
-var keywords map[string] bool = map[string] bool {
-	IF: true,
-	SWITCH: true,
-	DEFAULT: true,
-	BODY: true,
+var keywords map[string] uint = map[string] uint {
+	IF: IfFlag,
+	SWITCH: SwitchFlag,
+	DEFAULT: DefaultFlag, 
+	BODY: BodyFlag,
 }
 
 func  isKeyword(variableName string) bool {
 	_, ok := keywords[variableName]
 	return ok
+}
+
+/*
+Return 
+- number of the keywords in the map
+- flag for all the keywords found
+*/
+func countKeywords(mymap map[interface{}]interface{}) (int, uint) {
+	count := 0
+	flag := uint(0)
+	for keyObj:= range mymap {
+		key, ok := keyObj.(string)
+		if ok {
+			mask, ok := keywords[key]
+			if ok {
+				count++
+				flag |= mask
+			}
+		}
+	}
+	return count, flag
 }
 
 type eventTriggerDefinition struct {
@@ -272,20 +303,20 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 
 
 		depth := 1
-		_,  err = evalBodyArray(env, variables, bodyArray, depth)
+		_,  err = evalArrayObject(env, variables, bodyArray, depth)
 		if err != nil {
 			klog.Errorf("Error evaluating trigger %v: %v", trigger, err)
 			return nil, err
 		}
 		if klog.V(5) {
-			klog.Infof("processMessage after ievalBodyArray");
+			klog.Infof("processMessage after evalArrayObject");
 		}
 		savedVariables = append(savedVariables, variables)
 	}
 	return savedVariables, nil
 }
 
-/* Eval body 
+/* Eval body  Array
    env: the CEL execution environment
    variables: variables gathered so far
    bodyParam: body to evaluate
@@ -294,7 +325,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 	 cel.Env: updated execution environment
 	 error: any error
 */
-func evalBodyArray(env cel.Env, variables map[string]interface{}, bodyArray []interface{}, depth int) (cel.Env, error ) {
+func evalArrayObject(env cel.Env, variables map[string]interface{}, bodyArray []interface{}, depth int) (cel.Env, error ) {
 
 	var err error
 	for _, objectObj := range(bodyArray) {
@@ -302,37 +333,62 @@ func evalBodyArray(env cel.Env, variables map[string]interface{}, bodyArray []in
 		if !ok {
 			return env, fmt.Errorf("body object %v not map[interface{}]interface{}, but of type %T", objectObj, objectObj)
 		}
-		_, ifOK := object[IF]
-		switchObj, switchOK := object[SWITCH]
-		if ifOK && switchOK {
-			err = fmt.Errorf("object having both if and switch statement not supported. %v", object)
-			return env, err
-		}
-
-		if ifOK {
-			env, _, err := evalIf(env, variables, object, depth)
-			if err != nil {
-				return env, err
-			}
-			continue
-		}
-		if switchOK {
-			env, err := evalSwitch(env, variables, switchObj, depth)
-			if err != nil {
-				return env, err
-			}
-			continue
-		}
-		/* just plain assignment */
-		env, err = evalAssignment(env, variables, object, depth )
-		if err != nil {
-			return env, err
+		numKeywords, flags := countKeywords(object)
+		switch {
+			case (flags & IfFlag) != 0 :
+				/* If statement, only allow If or If and BODY */
+				env, _, err := evalIfWithSyntaxCheck(env, variables, object, numKeywords, flags, depth)
+				if err != nil {
+					return env, err
+				}
+				continue
+			case (flags & SwitchFlag) != 0 :
+				if numKeywords > 1 {
+					err = fmt.Errorf("switch contains more than one keyword: %v", object)
+					return env, err
+				}
+				if len(object) > 1 {
+					err = fmt.Errorf("switch also contains assignment: %v", object)
+					return env, err
+				}
+				env, err := evalSwitch(env, variables, object, numKeywords, flags, depth)
+				if err != nil {
+					return env, err
+				}
+				continue
+			case (flags & BodyFlag) != 0 :
+				/* evaluate body */
+				if numKeywords > 1 {
+					err = fmt.Errorf("body contains more than one keyword: %v", object)
+					return env, err
+				}
+				if len(object) > 1 {
+					err = fmt.Errorf("body also contains assignment: %v", object)
+					return env, err
+				}
+				env, err := evalBody(env, variables, object, numKeywords, flags, depth)
+				if err != nil {
+					return env, err
+				}
+				continue
+			case (flags & DefaultFlag) != 0 :
+				return env, fmt.Errorf("unexpected keyword default outside of a swtich: %v", objectObj)
+			default:
+				/* just plain assignment */
+				if len(object) > 1 {
+					err = fmt.Errorf("Multiple assignments in one object: %v", object)
+					return env, err
+				}
+				env, err = evalAssignment(env, variables, object, numKeywords, flags, depth )
+				if err != nil {
+					return env, err
+				}
 		}
 	}
 	return env, nil
 }
 
-func evalAssignment(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, depth int) (cel.Env, error) {
+func evalAssignment(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeywords int, flags uint, depth int) (cel.Env, error) {
 	if klog.V(6) {
 		klog.Infof("Entering evalAssignment object: %v", object)
 		defer klog.Infof("Leaving evalAssignment object")
@@ -375,21 +431,39 @@ func evalAssignment(env cel.Env, variables map[string]interface{}, object map[in
 			return env, err
 		}
 	}
-
-	/* check if recursive body exists */
-	nestedBodyObj, ok := object[BODY]
-	if ok {
-		nestedBody, ok := nestedBodyObj.([]interface{})
-		if ok {
-			return evalBodyArray(env, variables, nestedBody, depth );
-		} 
-		err = fmt.Errorf("body %v contains nested body that is not array of map[string]interface", nestedBodyObj)
-		return env, err
-	}
 	return env, nil
 }
 
-func evalIf(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, depth int) (cel.Env, bool, error) {
+/*
+ * Evaluate body 
+ */
+func evalBody(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeyword int, flags uint, depth int) (cel.Env, error) {
+	/* check if recursive body exists */
+	nestedBodyObj := object[BODY]
+	nestedBody, ok := nestedBodyObj.([]interface{})
+	if ok {
+		return evalArrayObject(env, variables, nestedBody, depth );
+	} 
+
+	err := fmt.Errorf("body %v contains nested body that is not array of map[string]interface", nestedBodyObj)
+	return env, err
+}
+
+func evalIfWithSyntaxCheck(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeywords int, flags uint, depth int) (cel.Env, bool, error) {
+	if numKeywords > 2 {
+		err := fmt.Errorf("body of if %v contains more than two keyword", object)
+		return env, false, err
+	}
+	if numKeywords == 2 && (flags & BodyFlag) == 0  {
+		/* second keyword is not body */
+		err := fmt.Errorf("if also contains non-body keyword: %v", object)
+		return env, false, err
+	}
+	if numKeywords == 2 && len(object) > 2 {
+		err := fmt.Errorf("can not mix assignment with body object in if: %v", object)
+		return env, false, err
+	}
+
 	conditionObj := object[IF]
 	condition, ok := conditionObj.(string)
 	if ( !ok ) {
@@ -404,34 +478,69 @@ func evalIf(env cel.Env, variables map[string]interface{}, object map[interface{
 		/* condition not met */
 		return env, false, nil
 	}
+
+	_, ok = object[BODY]
+	if ok {
+		/* if statement also contains body */
+		env, err = evalBody(env, variables, object, numKeywords, flags, depth)
+		return env,  true, err
+	} 
+
 	/* perform assignments */
-	env, err = evalAssignment(env, variables, object,  depth)
+	env, err = evalAssignment(env, variables, object,  numKeywords, flags, depth)
 	return env, true, err
 }
 
-func evalSwitch(env cel.Env, variables map[string]interface{}, switchObj interface{}, depth int) (cel.Env, error) {
+func evalSwitch(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeywords int, flags uint, depth int) (cel.Env, error) {
 	var err error
-	switchArray , ok := switchObj.([]map[interface{}]interface{})
+	switchObj, ok :=  object[SWITCH]
 	if !ok {
-		return env, fmt.Errorf("body of switch %v is not []map[interface{}]interface, but %T", switchObj, switchObj)
+		return env, fmt.Errorf("Expecting switch statement: %v ", switchObj)
 	}
+	switchArray, ok := switchObj.([]interface{})
+	if !ok {
+		return env, fmt.Errorf("body of switch not array of objects: %v ", switchObj)
 
-	defaultObjs := make([]map[interface{}]interface{}, 0)
-	for _, object := range(switchArray) {
-		_, ifOK := object[IF]
+	}
+	var defaultArray []interface{} = nil
+	for _ , arrayElementObj := range switchArray {
+		arrayElement, ok := arrayElementObj.(map[interface{}]interface{})
+		if !ok {
+			return env, fmt.Errorf("body component of switch not object: %v ", arrayElementObj)
+		}
+		switchCaseNumKeywords, switchCaseFlags := countKeywords(arrayElement)
+		_, ifOK := arrayElement[IF]
 		if ifOK {
 			/* evaluate the if statement */
-			env, conditionTrue, err := evalIf(env, variables, object, depth)
+			env, conditionTrue, err := evalIfWithSyntaxCheck(env, variables, arrayElement, switchCaseNumKeywords, switchCaseFlags, depth)
 			if err != nil || conditionTrue {
 				return env, err
 			}
-		} else {
-			defaultObjs = append(defaultObjs, object)
+			continue
+		} 
+		defaultObj, defaultOK := arrayElement[DEFAULT]
+		if defaultOK {
+			if len(arrayElement) > 1 {
+				return env, fmt.Errorf("default object must be stand alone: %v", object)
+			}
+			if defaultArray != nil {
+				return env, fmt.Errorf("Only one default statement supported.  Extra default statement: %v", arrayElement)
+			}
+			defaultArray, ok  = defaultObj.([]interface{})
+			if !ok {
+				return env, fmt.Errorf("content of default not []interface{}: %v, type: %T", defaultObj, defaultObj)
+
+			}
+			continue
 		}
+		/* Unsupported keyword, or assignment */
+		return env, fmt.Errorf("switch statement must contain if or default statements, but found: %v, type %T", arrayElement, arrayElement)
+		
 	}
 	/* evaluate defaults */
-	for _, object := range(defaultObjs) {
-		env, err = evalAssignment(env, variables, object, depth)
+
+	if defaultArray != nil  {
+		env, err = evalArrayObject(env, variables, defaultArray, depth)
 		if err != nil {
 			return env, err
 		}
