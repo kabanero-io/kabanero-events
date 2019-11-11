@@ -9,7 +9,11 @@ push-image:
 	docker push $(IMAGE)
 
 test:
-	GO111MODULE=off go test
+ifeq ($(TRAVIS),true)
+	go test -v -race ./...
+else
+	echo "Skipping tests since this is not a Travis build."
+endif
 
 format:
 	go fmt *.go

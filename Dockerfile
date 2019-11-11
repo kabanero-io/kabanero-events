@@ -34,8 +34,9 @@ COPY *.go ./
 RUN go get -u golang.org/x/lint/golint; golint -set_exit_status
 
 # Run unit test
-# COPY test_data ./test_data/
-# RUN go test -v
+ COPY Makefile .
+ COPY test_data ./test_data/
+ RUN make test
 
 # Build executable
 RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"'
