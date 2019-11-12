@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-//	"os"
+	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -63,12 +63,10 @@ eventTriggers:
 function section:
 functions:
   - name: <ident>
-    input: 
-      - <ident >
-      - <ident>
+    input: <ident>
     output: <ident>
 	body:
-  - name: <expr>
+  - name: <ident>
     ...
 
 
@@ -136,8 +134,10 @@ const (
 	DEFAULT    = "default"
 	EVENTSOURCE = "eventSource"
 	INPUT       = "input"
+	OUTPUT       = "output"
 	SETTINGS    = "settings"
 	EVENTTRIGGERS = "eventTriggers"
+	SYSTEMERROR = "systemError"
 	FUNCTIONS   = "functions"
 )
 
@@ -200,10 +200,11 @@ func newTriggerProcessor() *triggerProcessor {
 	return &triggerProcessor{}
 }
 
-func (tp *triggerProcessor) initialize(fileName string) error {
+/* Initialize trigger directory */
+func (tp *triggerProcessor) initialize(dir string) error {
 	if klog.V(6) {
-		klog.Infof("triggerProcessor.initialize %v", fileName)
-		defer klog.Infof("Leaving trigggerProcessor.initialize %v", fileName)
+		klog.Infof("triggerProcessor.initialize %v", dir)
+		defer klog.Infof("Leaving trigggerProcessor.initialize %v", dir)
 	}
 	var err error
 	tp.triggerDef = &eventTriggerDefinition {
@@ -211,11 +212,20 @@ func (tp *triggerProcessor) initialize(fileName string) error {
 		eventTriggers: make(map[string] []map[interface{}]interface{}, 0),
 		functions: make(map[string]map[interface{}]interface{}, 0),
 	}
-	err = readTriggerDefinition(fileName, tp.triggerDef)
+	files, err := findFiles(dir, []string { ".yaml", ".yml"})
 	if err != nil {
 		return err
 	}
-	tp.triggerDir = filepath.Dir(fileName)
+	if len(files) == 0 {
+		return fmt.Errorf("Unable to locate trigger files at directory %v", dir)
+	}
+	for _, fileName := range files {
+		err = readTriggerDefinition(fileName, tp.triggerDef)
+		if err != nil {
+			return err
+		}
+	}
+	tp.triggerDir = dir
 	return nil
 }
 
@@ -548,71 +558,6 @@ func evalSwitch(env cel.Env, variables map[string]interface{}, object map[interf
 	return env, nil
 }
 
-//
-//	/* Go through the trigger section to find the rule to fire*/
-//	action, err := findTrigger(env, tp.triggerDef, variables)
-//	if err != nil {
-//		return err
-//	}
-//
-//	/* Fire the rule */
-//	if action == nil {
-//		/* no action found */
-//		klog.Infof("No action found for message %s", message)
-//		return nil
-//	}
-//	directory := action.ApplyResources.Directory
-//	if directory == "" {
-//		klog.Errorf("action drectory in trigger file is empty")
-//		return fmt.Errorf("action directory in trigger file is empty")
-//	}
-//	resourceDir := filepath.Join(tp.triggerDir, directory)
-//
-//	files := make([] string, 0)
-//	err = filepath.Walk(resourceDir, func(path string, info os.FileInfo, err error) error {
-//		if err != nil {
-//			// problem with accessing a path
-//			klog.Errorf("problem processing trigger %s, error %s", path, err)
-//			return err
-//		}
-//		if info.IsDir() {
-//			// don't process directory itself
-//			klog.Infof("Processing directory %s", path)
-//			return nil
-//		}
-//		if strings.HasSuffix(info.Name(), ".yaml") || strings.HasSuffix(info.Name(), ".yml") {
-//			files = append(files, path)
-//		} else {
-//			klog.Infof("Skipping processing file %s", path)
-//		}
-//		return nil
-//	})
-//
-//	/* ensure all files are substituted OK*/
-//	substituted := make([] string, 0)
-//	for _, path := range files {
-//		after, err := substituteTemplateFile(path, variables)
-//		if err != nil {
-//			return err
-//		}
-//		substituted = append(substituted, after)
-//	}
-//
-//    if tp.triggerDef.Settings != nil && tp.triggerDef.Settings.Dryrun != nil && *tp.triggerDef.Settings.Dryrun {
-//		klog.Infof("triggerProcessor: dryrun is set. Resources not created")
-//    } else {
-//		/* Apply the files */
-//		for _, resource:= range substituted {
-//			if klog.V(5) {
-//				klog.Infof("applying resource: %s", resource)
-//			}
-//			err = createResource(resource, jobid, dynamicClient)
-//			if err != nil {
-//				return err
-//			}
-//		}
-//	}
-//	return nil
 
 /* Shallow copy a map */
 func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
@@ -621,6 +566,16 @@ func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
 		newMap[key] = val
 	}
 	return newMap
+}
+
+
+/* Get initial CEL environment 
+*/
+func initializeEmptyCELEnv() (cel.Env, error) {
+	/* initilize empty CEL environment with additional functions */
+	additionalFuncs := getAdditionalCELFuncDecls()
+	klog.Infof("Additional Func Decls: %v", additionalFuncs)
+	return cel.NewEnv(getAdditionalCELFuncDecls() )
 }
 
 /* Get initial CEL environment
@@ -633,16 +588,14 @@ func initializeCELEnv(message map[string]interface{}, inputVariableName string) 
 		klog.Infof("entering initializeCELEnv")
 		defer klog.Infof("Leaving initializeCELEnv")
 	}
-	variables := make(map[string]interface{})
 
 	/* initilize empty CEL environment with additional functions */
-	additionalFuncs := getAdditionalCELFuncDecls()
-	klog.Infof("Additional Func Decls: %v", additionalFuncs)
-	env, err := cel.NewEnv(getAdditionalCELFuncDecls() )
+	env, err := initializeEmptyCELEnv()
 	if err != nil {
 		return nil, nil,  err
 	}
 
+	variables := make(map[string]interface{})
 	ident := decls.NewIdent(inputVariableName, decls.NewMapType(decls.String, decls.Any), nil)
 	env, err = env.Extend(cel.Declarations(ident))
 	if err != nil {
@@ -654,44 +607,6 @@ func initializeCELEnv(message map[string]interface{}, inputVariableName string) 
 	return env, variables,  nil
 }
 
-/* Evaluate one variable and update variables map with any new variables 
-	env: the CEL environment
-	triggerVar: the variable declaration in the eventTrigger.yaml
-	variables: variables mappings collection so far
-	Return:
-		env: new environment after variables are updated. Even if there are errors, env can be set to contain all valid variables collected up to the point of error
-*/
-//func evaluateVariable(env cel.Env, triggerVar *Variable,  variables map[string]interface{} ) (cel.Env, error) {
-//	/* evaluate value of each variable */
-//	if triggerVar == nil {
-//		return env, nil
-//	}
-//	boolVal, err := evalCondition(env, triggerVar.When, variables) 
-//	if err != nil {
-//		return env, err
-//	}
-//	/* Condition did not meet */
-//	if !boolVal {
-//		return env, nil
-//	}
-//	env, err = setOneVariable(env, triggerVar.Name, triggerVar.Value, variables)
-//	if err != nil {
-//		return env, err
-//	}
-//
-//	/* recursive evaluate */
-//	for _, childVar := range triggerVar.Variables {
-//		env, err = evaluateVariable(env, childVar, variables)
-//		if err != nil {
-//			return env, err
-//		}
-//	}
-//	if klog.V(7) {
-//		klog.Infof("After evaluating variable name: %s, value: %s, variables contains: %#v", triggerVar.Name, triggerVar.Value, variables)
-//
-//	}
-//	return env, nil
-//}
 
 func setOneVariable(env cel.Env, name string, val string, variables map[string]interface{}) (cel.Env, error) {
 	if name == "" {
@@ -781,6 +696,18 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 		if intval, ok = out.Value().(int64); !ok {
 			return env, fmt.Errorf("Unable to cast variable %s, value %s into int64", entireName, val)
 		}
+		if createNewIdent {
+			ident := decls.NewIdent(name, decls.Int, nil)
+			env, err = env.Extend(cel.Declarations(ident))
+			if err != nil {
+				return env, err
+			}
+		}
+		variables[name] = intval
+		if klog.V(4) {
+			klog.Infof("variable %s set to %v", entireName, intval)
+		}
+		/*
 		floatval := float64(intval)
 
 		if createNewIdent {
@@ -794,6 +721,7 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 		if klog.V(4) {
 			klog.Infof("variable %s set to %v", entireName, floatval)
 		}
+		*/
 	case TYPEBOOL:
 		boolval, ok := out.Value().(bool);
 		if ! ok {
@@ -846,14 +774,17 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 			klog.Infof("variable %s set to %v", entireName, stringval)
 		}
 	case TYPELIST:
-		var listval interface{} = out.Value()
+		/*
 		switch out.Value().(type) {
 		case []ref.Val:
 		case []interface{}:
 		case []string:
+		case []int64:
+		case []float64:
 		default:
 			return  env, fmt.Errorf("Unable to cast variable %s, value %s into %T", entireName, val, out.Value())
 		}
+		*/
 		if createNewIdent {
 			ident := decls.NewIdent(name, decls.NewListType(decls.Any), nil)
 			env, err = env.Extend(cel.Declarations(ident))
@@ -861,12 +792,13 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 				return env, err
 			}
 		}
+		var listval interface{} = out.Value()
 		variables[name] = listval
 		if klog.V(4) {
 			klog.Infof("variable %s set to %v", entireName, listval)
 		}
 	case TYPEMAP:
-		mapval, ok := out.Value().(map[string]interface{})
+		_, ok := out.Value().(map[string]interface{})
 		if !ok {
 			_, ok := out.Value().( map[ref.Val]ref.Val)
 			if !ok {
@@ -882,10 +814,18 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 		}
 		variables[name] = out.Value()
 		if klog.V(4) {
-			klog.Infof("variable %s set to %v", entireName, mapval)
+			klog.Infof("variable %s set to %v", entireName, out)
 		}
 	default:
-		return env, fmt.Errorf("In function setOneVariable: Unable to process variable name: %s, value: %s, type %s", entireName, val, out.Type().TypeName())
+		if createNewIdent {
+			/* don't have a usable type to create new top level variable  */
+			return env, fmt.Errorf("In function setOneVariable: Unable to process variable name: %s, value: %s, type %s", entireName, val, out.Type().TypeName())
+		}
+		/* If not creating a new identifier, try to use the value as is. TODO: Should we just use out? */
+		variables[name] = out.Value()
+		if klog.V(4) {
+			klog.Infof("variable %s set to %v", entireName, out)
+		}
 	}
 	return env, nil
 }
@@ -1028,6 +968,29 @@ func readTriggerDefinition(fileName string, td *eventTriggerDefinition) error {
 				if ok {
 					name, ok := nameObj.(string)
 					if ok {
+
+						inputObj, ok := functionMap[INPUT]
+						if !ok {
+							return fmt.Errorf("function %v does not contain input variable name: %v", name, functionMap)
+						}
+						_, ok = inputObj.(string)
+						if !ok {
+							return fmt.Errorf("function input %v not a string: %v", name, inputObj)
+						} 
+
+						outputObj, ok := functionMap[OUTPUT]
+						if !ok {
+							return fmt.Errorf("function %v does not contain output variable name: %v", name, functionMap)
+						}
+						_, ok = outputObj.(string)
+						if !ok {
+							return fmt.Errorf("function output %v not a string %v", name, outputObj)
+						}
+
+						_, existing := td.functions[name]
+						if existing {
+							return fmt.Errorf("error: event trigger function redcelared: %v", name)
+						}
 						td.functions[name] = functionMap
 					}
 				}
@@ -1119,7 +1082,7 @@ func evalCondition(env cel.Env, when string, variables map[string]interface{}) (
 //	return nil, nil
 //}
 
-func substituteTemplateFile(fileName string, variables map[string]interface{}) (string, error) {
+func substituteTemplateFile(fileName string, variables interface{}) (string, error) {
 	bytes, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		return "", err
@@ -1135,7 +1098,7 @@ func substituteTemplateFile(fileName string, variables map[string]interface{}) (
 	return substituted, err
 }
 
-func substituteTemplate(templateStr string, variables map[string]interface{}) (string, error) {
+func substituteTemplate(templateStr string, variables interface{}) (string, error) {
 	t, err := template.New("kabanero").Parse(templateStr)
 	if err != nil {
 		return "", err
@@ -1148,8 +1111,8 @@ func substituteTemplate(templateStr string, variables map[string]interface{}) (s
 	return buffer.String(), nil
 }
 
-/* Create application. Assume it does not already exist */
-func createResource(resourceStr string, jobid string, dynamicClient dynamic.Interface) error {
+/* Create resource. Assume it does not already exist */
+func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
 	if klog.V(4) {
 		klog.Infof("Creating resource %s", resourceStr)
 	}
@@ -1171,14 +1134,16 @@ func createResource(resourceStr string, jobid string, dynamicClient dynamic.Inte
 		return fmt.Errorf("resource %s does not contain namepsace", resourceStr)
 	}
 
-	/* add labale kabanero.io/jobld = <jobid> */
+	/* add label kabanero.io/jobld = <jobid> */
+	/*
 	err = setJobID(unstructuredObj, jobid)
 	if err != nil {
 		return err
 	}
+	*/
 
 	if klog.V(5) {
-		klog.Infof("Resource after adding jobid: %v", unstructuredObj)
+		klog.Infof("Resources before creating : %v", unstructuredObj)
 	}
 	 gvr := schema.GroupVersionResource{group, version, resource}
 	if err == nil {
@@ -1439,10 +1404,241 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
 	return types.NewDynamicMap(types.DefaultTypeAdapter, ret)
 }
 
+
+/* implementation of call for CEL. 
+   function string: name of function to call
+   param map[string]interface{}: param to pass to function
+   Return interface{} : result
+*/
+func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
+	klog.Infof("callCEL first param: %v, second param: %v", functionVal, param)
+
+	if param.Value() == nil {
+		klog.Infof("callCEL param is nil")
+		return types.ValOrErr(param, "unexpected null second parameter passed to function call.") 
+	}
+	/*
+	paramMap, ok := param.Value().(map[string]interface{})
+	if !ok {
+		klog.Infof("callCEL param is not map[string]interface{}")
+		return types.ValOrErr(param, "unexpected type '%v' passed as second parameter to function call. It should be map[string]interface{}", param.Type())
+	}
+	*/
+
+	if functionVal.Value() == nil {
+		klog.Infof("callCEL function is nil")
+		return types.ValOrErr(functionVal, "unexpected null first parameter passed to function call.") 
+	}
+	klog.Infof("callCEL first param type: %v, second param type: %v", functionVal.Type(), param.Type())
+
+	function, ok := functionVal.Value().(string)
+	if !ok {
+		klog.Infof("callCEL function is not string")
+		return types.ValOrErr(functionVal, "unexpected type '%v' passed as first parameter to function call. It should be string", functionVal.Type())
+	}
+
+	klog.Infof("callCEL: getting functions:  %v ", triggerProc.triggerDef.functions)
+
+	functionDecl, ok := triggerProc.triggerDef.functions[function]
+	if !ok {
+		klog.Infof("callCEL function %v not found", function)
+		return types.ValOrErr(functionVal, "function %v not found", function)
+	}
+
+	inputObj, ok := functionDecl[INPUT]
+	if !ok {
+		klog.Infof("callCEL function %v input variable name not found", function)
+		return types.ValOrErr(functionVal, "function %v does not contain input variable", functionDecl)
+	}
+	input, ok := inputObj.(string)
+	if !ok {
+		klog.Infof("callCEL function %v input variable name not string", function)
+		return types.ValOrErr(functionVal, "input variable of function %v not a string: %v", function, inputObj)
+	}
+	outputObj, ok := functionDecl[OUTPUT]
+	if !ok {
+		klog.Infof("callCEL function %v output variable name not found", function)
+		return types.ValOrErr(functionVal, "function %v does not contain output variable", functionDecl)
+	}
+	output, ok := outputObj.(string)
+	if !ok {
+		klog.Infof("callCEL function %v output variable name not string", function)
+		return types.ValOrErr(functionVal, "output variable of function %v not a string: %v", functionDecl, outputObj)
+	}
+
+	bodyArrayObj , ok := functionDecl[BODY]
+	if !ok {
+		klog.Infof("callCEL function %v function body not found", function)
+		return types.ValOrErr(functionVal, "function %v does not a have a body", functionDecl)
+	}
+	bodyArray, ok := bodyArrayObj.([]interface{})
+	if !ok {
+		klog.Infof("callCEL function %v function body not []interface{}", function)
+		return types.ValOrErr(functionVal, "body of function %v not not []interface{}", functionDecl)
+	}
+
+
+	variables := make(map[string]interface{})
+	env, err := initializeEmptyCELEnv() 
+	if err != nil {
+		klog.Infof("callCEL function %v Unable to initialize CEL environment", function)
+		return types.ValOrErr(functionVal, "callCEL Unable to initialize CEL environment. Error: %v ", err)
+	}
+
+	env, err = createOneVariable(env, input, "", param , variables)
+	if err != nil {
+		klog.Infof("callCEL function %v unable to create input variable %v for %v", function, input, param)
+		return types.ValOrErr(param, "callCEL Unable to initialize CEL environment. Error: %v ", err)
+	}
+
+	depth := 1
+	_,  err = evalArrayObject(env, variables, bodyArray, depth)
+	if err != nil {
+		klog.Infof("callCEL error: %v", err)
+		return types.ValOrErr(param, "callCEL error evaluating function body. Error: %v ", err)
+	} 
+	outValueObj, ok := variables[output]
+	if !ok {
+		klog.Errorf("callCEL error calling function %v: output variable %v not set", function, output)
+		return types.ValOrErr(types.NewDynamicMap(types.DefaultTypeAdapter, variables), "error calling function %v: output variable %v not set by function", function, output)
+	} 
+
+	var ret ref.Val // return value
+	switch outValueObj.(type) {
+	case bool:
+		ret = types.Bool(outValueObj.(bool))
+	case int64:
+		ret = types.Int(outValueObj.(int64))
+	case float64:
+		ret = types.Double(outValueObj.(float64))
+	case string:
+		ret = types.String(outValueObj.(string))
+	case ref.Val:
+		ret = outValueObj.(ref.Val)
+	case map[string] interface{}:
+		ret = types.NewDynamicMap(types.DefaultTypeAdapter,outValueObj)
+	case map[interface{}] interface{}:
+		ret = types.NewDynamicMap(types.DefaultTypeAdapter,outValueObj)
+	case [] interface{}:
+		ret = types.NewDynamicList(types.DefaultTypeAdapter, ret)
+	default:
+		return types.ValOrErr(types.NewDynamicMap(types.DefaultTypeAdapter, variables), "function %v return value  %v has unsupproted type %T", function, outValueObj, outValueObj)
+
+	}
+	return ret
+}
+
+
+/* implementation of call for applyResources. 
+   dir string: directory
+   variable Any: variable to pass to go template
+   Return string : empty if OK, otherwise, error message
+*/
+func applyResourcesCEL(dir ref.Val, variables ref.Val) ref.Val {
+	klog.Infof("applyResourcesCEL first param: %v, second param: %v", dir, variables)
+
+	if variables.Value() == nil {
+		klog.Infof("applyResourcesCEL variables is nil")
+		return types.ValOrErr(variables, "unexpected null second parameter passed to function applyResources.") 
+	}
+
+	if dir.Value() == nil {
+		klog.Infof("applyResourcesCEL directory is nil")
+		return types.ValOrErr(dir, "unexpected null first parameter passed to function applyResources.") 
+	}
+	klog.Infof("applyResources first param type: %v, second param type: %v", dir.Type(), variables.Type())
+
+	dirStr, ok := dir.Value().(string)
+	if !ok {
+		klog.Infof("applyResources dir is not string")
+		return types.ValOrErr(dir, "unexpected type '%v' passed as first parameter to function applyResources. It should be string", dir.Type())
+	}
+
+	err := applyResourcesHelper(triggerProc.triggerDir, dirStr, variables, true)
+	var ret ref.Val
+	if err != nil {
+		ret = types.String(fmt.Sprintf("applyResources error  applying template %v", err) )
+	} else {
+		ret = types.String("")
+	}
+	return ret
+}
+
+
+/* Find files with given suffixes */
+func findFiles(resourceDir string, suffixes []string) ([]string, error) {
+
+	files := make([] string, 0)
+	err := filepath.Walk(resourceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			// problem with accessing a path
+			klog.Errorf("findFiles: problem locating files from %s, error %s", path, err)
+			return err
+		}
+		if info.IsDir() {
+			// don't process directory itself
+			if klog.V(6) {
+				klog.Infof("findFiles processing directory %s", path)
+			}
+			return nil
+		}
+		found := false
+		for _, suffix := range suffixes {
+			if strings.HasSuffix(info.Name(), suffix){
+				found = true
+				files = append(files, path)
+				break
+			}
+		}
+		if !found {
+			if klog.V(6){
+				klog.Infof("findFiles: skipping processing file %s", path)
+			}
+		}
+		return nil
+	})
+	return files, err
+}
+
+func applyResourcesHelper(triggerDirectory string, directory string, variables interface{}, dryrun bool) error {
+	files, err := findFiles(triggerDirectory , []string{"yaml", "yml"})
+	if err != nil {
+		return err
+	}
+
+	/* ensure all files are substituted OK*/
+	substituted := make([] string, 0)
+	for _, path := range files {
+		after, err := substituteTemplateFile(path, variables)
+		if err != nil {
+			return err
+		}
+		substituted = append(substituted, after)
+	}
+
+    if dryrun {
+		klog.Infof("applyResources: dryrun is set. Resources not created")
+    } else {
+		/* Apply the files */
+		for _, resource:= range substituted {
+			if klog.V(5) {
+				klog.Infof("applying resource: %s", resource)
+			}
+			err = createResource(resource, dynamicClient)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+
 /* Get declaration of additional overloaded CEL functions */
 func getAdditionalCELFuncDecls() cel.EnvOption{
 	return triggerFuncDecls
 }
+
 
 /* Get implemenations of additional overloaded CEL functions */
 func getAdditionalCELFuncs() cel.ProgramOption {
@@ -1454,6 +1650,10 @@ var triggerFuncs cel.ProgramOption
 
 func init() {
 	triggerFuncDecls = cel.Declarations (
+		decls.NewFunction("call", 
+			decls.NewOverload("call_string_any_string", []*exprpb.Type{decls.String, decls.Any}, decls.Any)),
+		decls.NewFunction("applyResources", 
+			decls.NewOverload("applyResources_string_any", []*exprpb.Type{decls.String, decls.Any}, decls.String)),
 		decls.NewFunction("kabaneroConfig", 
 			decls.NewOverload("kabaneroConfig", []*exprpb.Type{}, decls.NewMapType(decls.String, decls.Any))),
 		decls.NewFunction("jobID", 
@@ -1468,6 +1668,12 @@ func init() {
 			decls.NewOverload("split_string", []*exprpb.Type{decls.String, decls.String}, decls.NewListType(decls.String))))
 
 	triggerFuncs = cel.Functions(
+		&functions.Overload{
+	        Operator: "call",
+	        Binary: callCEL} ,
+		&functions.Overload{
+	        Operator: "applyResources",
+	        Binary: applyResourcesCEL} ,
 		&functions.Overload{
 	        Operator: "kabaneroConfig",
 	        Function: kabaneroConfigCEL} ,

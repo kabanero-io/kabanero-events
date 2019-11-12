@@ -20,6 +20,8 @@ const (
 	TRIGGER4 = "test_data/trigger4.yaml"
 	TRIGGER5 = "test_data/trigger5.yaml"
 	TRIGGER6 = "test_data/trigger6.yaml"
+	TRIGGER7 = "test_data/trigger7.yaml"
+	TRIGGER8 = "test_data/trigger8.yaml"
 )
 
 /* Simaple test to read data structure*/
@@ -640,4 +642,59 @@ func testOneSwitch(tp *triggerProcessor, srcEvent []byte, expectedDirectory  str
 	}
 
 	return nil
+}
+
+func TestCall(t *testing.T) {
+	srcEvent := []byte(`{"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} } `)
+	var event map[string]interface{}
+	err := json.Unmarshal(srcEvent, &event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+
+	// Need to set global triggerProc variable
+	triggerProc = newTriggerProcessor()
+	err = triggerProc.initialize(TRIGGER7)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	variables, err := triggerProc.processMessage(event, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Variables: %v", variables)
+
+	/* compare nested with temp.result */
+	temp := variables[0]["temp"].(map[string]interface{})
+	final := temp["final"]
+	finalBool := final.(bool)
+	if !finalBool {
+		t.Fatal(fmt.Errorf("result between nested and temp.result do not match. Final variables: %v", variables))
+	}
+}
+
+func TestRecursiveCall(t *testing.T) {
+	srcEvent := []byte(`{"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} } `)
+	var event map[string]interface{}
+	err := json.Unmarshal(srcEvent, &event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+
+	// Need to set global triggerProc variable
+	triggerProc = newTriggerProcessor()
+	err = triggerProc.initialize(TRIGGER8)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	variables, err := triggerProc.processMessage(event, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Variables: %v", variables)
+
 }
