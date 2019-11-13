@@ -27,6 +27,7 @@ func TestReadUrl(t *testing.T) {
 var kabaneroIndex = `triggers:
  - description: sample trigger
    url: https://host/trigger-path
+   sha256: 270fe2e576132a6fb247755762b4556d6ff215d3507d66643304ea97cb2ec58e
 stacks:
 - default-image: java-microprofile
   default-pipeline: default
@@ -163,12 +164,18 @@ func TestGetTriggerURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	url, err := getTriggerURL(collectionMap)
+	url, chksum, err := getTriggerURL(collectionMap)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if url != "https://host/trigger-path" {
-		t.Fatal(fmt.Errorf("Unexptect url. Expecting: https://host/trigger-path, got : %s", url))
+		t.Fatal(fmt.Errorf("unexptect url. Expecting: https://host/trigger-path, got : %s", url))
+	}
+
+	if chksum != "270fe2e576132a6fb247755762b4556d6ff215d3507d66643304ea97cb2ec58e" {
+		t.Fatal(fmt.Errorf("unexpected sha256 checksum. Expecting: '%s', got: '%s'",
+			"270fe2e576132a6fb247755762b4556d6ff215d3507d66643304ea97cb2ec58e",
+			chksum))
 	}
 }
 

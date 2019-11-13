@@ -20,6 +20,8 @@ import (
 	"archive/tar"
 	"bufio"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"gopkg.in/yaml.v2"
 	"io"
@@ -32,9 +34,10 @@ import (
 	"strings"
 )
 
-/* constants*/
+/* constants */
 const (
 	TRIGGERS = "triggers"
+	CHKSUM = "sha256"
 )
 
 func readFile(fileName string) ([]byte, error) {
@@ -66,6 +69,25 @@ func readJSON(fileName string) (*unstructured.Unstructured, error) {
 	return unstructuredObj, nil
 }
 
+func downloadFileTo(url, path string) error {
+	client := http.Client{}
+	response, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	out, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	// Write the file
+	_, err = io.Copy(out, response.Body)
+	return err
+}
+
 func getHTTPURLReaderCloser(url string) (io.ReadCloser, error) {
 
 	client := http.Client{}
@@ -77,7 +99,7 @@ func getHTTPURLReaderCloser(url string) (io.ReadCloser, error) {
 	if response.StatusCode == http.StatusOK {
 		return response.Body, nil
 	}
-	return nil, fmt.Errorf("Unable to read from url %s, http status: %s", url, response.Status)
+	return nil, fmt.Errorf("unable to read from url %s, http status: %s", url, response.Status)
 }
 
 /* Read remote file from URL and return bytes */
@@ -100,40 +122,59 @@ func yamlToMap(bytes []byte) (map[string]interface{}, error) {
 	return myMap, nil
 }
 
-/* Get the URL of where the trigger is stored*/
-func getTriggerURL(collection map[string]interface{}) (string, error) {
+/* Get the URL and sha256 checksum of where the trigger is stored */
+func getTriggerURL(collection map[string]interface{}) (string, string, error) {
 	triggersObj, ok := collection[TRIGGERS]
 	if !ok {
-		return "", fmt.Errorf("collection does not contain triggers: section")
+		return "", "", fmt.Errorf("collection does not contain triggers: section")
 	}
+
 	triggersArray, ok := triggersObj.([]interface{})
 	if !ok {
-		return "", fmt.Errorf("collection does not contain triggers section is not an Arry")
+		return "", "", fmt.Errorf("collection does not contain triggers section is not an Arry")
 	}
+
 	var retURL = ""
+	var retChkSum = ""
+
 	for index, arrayElement := range triggersArray {
 		mapObj, ok := arrayElement.(map[interface{}]interface{})
 		if !ok {
-			return "", fmt.Errorf("triggers section at index %d is not properly formed", index)
+			return "", "", fmt.Errorf("triggers section at index %d is not properly formed", index)
 		}
 		urlObj, ok := mapObj[URL]
 		if !ok {
-			return "", fmt.Errorf("triggers section at index %d is not contain url", index)
+			return "", "", fmt.Errorf("triggers section at index %d does not contain url", index)
 		}
 		url, ok := urlObj.(string)
 		if !ok {
-			return "", fmt.Errorf("triggers section at index %d url is not a string: %s", index, url)
+			return "", "", fmt.Errorf("triggers section at index %d url is not a string: %v", index, urlObj)
 		}
 		retURL = url
+
+		chksumObj, ok := mapObj[CHKSUM]
+		if !ok {
+			return "", "", fmt.Errorf("triggers section at index %d does not contain sha256 checksum", index)
+		}
+		chksum, ok := chksumObj.(string)
+		if !ok {
+			return "", "", fmt.Errorf("triggers section at index %d is not a string: %v", index, chksumObj)
+		}
+		retChkSum = chksum
 	}
 
 	if retURL == "" {
-		return "", fmt.Errorf("Unable to find url from triggers section")
+		return "", "", fmt.Errorf("unable to find url from triggers section")
 	}
-	return retURL, nil
+
+	if retChkSum == "" {
+		return "", "", fmt.Errorf("unable to find sha256 checksum from triggers section")
+	}
+
+	return retURL, retChkSum, nil
 }
 
-/* Merage a directory path with a relative path. Return error if the rectory not a prefix of the merged path after the merge  */
+/* Merge a directory path with a relative path. Return error if the rectory not a prefix of the merged path after the merge  */
 func mergePathWithErrorCheck(dir string, toMerge string) (string, error) {
 	dest := filepath.Join(dir, toMerge)
 	dir, err := filepath.Abs(dir)
@@ -147,7 +188,24 @@ func mergePathWithErrorCheck(dir string, toMerge string) (string, error) {
 	if strings.HasPrefix(dest, dir) {
 		return dest, nil
 	}
-	return dest, fmt.Errorf("Unable to merge directory %s with %s, The merged directory %s is not in a subdirectory", dir, toMerge, dest)
+	return dest, fmt.Errorf("unable to merge directory %s with %s, The merged directory %s is not in a subdirectory", dir, toMerge, dest)
+}
+
+/* Calculate the SHA256 sum of a file */
+func sha256sum(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	_, err = io.Copy(hash, file)
+	if err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 /* gunzip and then untar into a directory */
@@ -182,24 +240,25 @@ func gUnzipUnTar(readCloser io.ReadCloser, dir string) error {
 		if mode.IsRegular() {
 			fileToCreate, err := os.OpenFile(dest, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
 			if err != nil {
-				return fmt.Errorf("Unable to create file %s, error: %s", dest, err)
+				return fmt.Errorf("unable to create file %s, error: %s", dest, err)
 			}
+
 			_, err = io.Copy(fileToCreate, tarReader)
 			closeErr := fileToCreate.Close()
 			if err != nil {
-				return fmt.Errorf("Unable to read file %s, error: %s", dest, err)
+				return fmt.Errorf("unable to read file %s, error: %s", dest, err)
 			}
 			if closeErr != nil {
-				return fmt.Errorf("Unable to close file %s, error: %s", dest, closeErr)
+				return fmt.Errorf("unable to close file %s, error: %s", dest, closeErr)
 			}
 		} else if mode.IsDir() {
 			err = os.MkdirAll(dest, 0755)
 			if err != nil {
-				return fmt.Errorf("Unable to make directory %s, error:  %s", dest, err)
+				return fmt.Errorf("unable to make directory %s, error:  %s", dest, err)
 			}
 			klog.Infof("Created subdirectory %s\n", dest)
 		} else {
-			return fmt.Errorf("unsupported file type within tar archive: file within tar: %s, fiele type: %v", header.Name, mode)
+			return fmt.Errorf("unsupported file type within tar archive: file within tar: %s, field type: %v", header.Name, mode)
 		}
 
 	}
@@ -226,11 +285,40 @@ func downloadTrigger(kabaneroIndexURL string, dir string) error {
 	if err != nil {
 		return err
 	}
-	triggerURL, err := getTriggerURL(kabaneroIndexMap)
+	triggerURL, triggerChkSum, err := getTriggerURL(kabaneroIndexMap)
 	if err != nil {
 		return err
 	}
-	triggerReadCloser, err := getHTTPURLReaderCloser(triggerURL)
+
+	if klog.V(5) {
+		klog.Infof("Found trigger with URL %s and sha256 checksum of %s", triggerURL, triggerChkSum)
+	}
+
+	triggerArchiveName := filepath.Join(dir, "incubator.trigger.tar.gz")
+	err = downloadFileTo(triggerURL, triggerArchiveName)
+	if err != nil {
+		return err
+	}
+
+	// Verify that the checksum matches the value found in kabanero-index.yaml
+	if !skipChkSumVerify {
+		chkSum, err := sha256sum(triggerArchiveName)
+		if err != nil {
+			return fmt.Errorf("unable to calculate checksum of file %s: %s", triggerArchiveName, err)
+		}
+
+		if klog.V(5) {
+			klog.Infof("Calculated sha256 checksum of file %s: %s", triggerArchiveName, chkSum)
+		}
+
+		if chkSum != triggerChkSum {
+			klog.Fatalf("trigger collection checksum does not match the checksum from the Kabanero index: found: %s, expected: %s",
+				chkSum, triggerChkSum)
+		}
+	}
+
+	// Untar the triggers collection
+	triggerReadCloser, err := os.Open(triggerArchiveName)
 	if err != nil {
 		return err
 	}
