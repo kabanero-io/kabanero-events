@@ -65,7 +65,7 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 	message[HEADER] = map[string][]string(header)
 	message[BODY] = bodyMap
 
-	_, err = triggerProc.processMessage(message, "default")
+	_, err = triggerProc.processMessage(message, "github")
 	if err != nil {
 		klog.Errorf("Error processing webhook message: %v", err)
 	}

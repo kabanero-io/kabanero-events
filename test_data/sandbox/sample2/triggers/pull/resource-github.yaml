@@ -1,0 +1,12 @@
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: git-{{.nameSuffix}}
+  namespace: {{.namespace}}
+spec:
+  type: git
+  params:
+    - name: url
+      value: {{.repoURL}}
+    - name: revision
+      value: {{.pr.revision}}

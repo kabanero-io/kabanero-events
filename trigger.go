@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"os"
+//	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -315,7 +315,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 		depth := 1
 		_,  err = evalArrayObject(env, variables, bodyArray, depth)
 		if err != nil {
-			klog.Errorf("Error evaluating trigger %v: %v", trigger, err)
+			klog.Errorf("Error evaluating trigger %v: ERROR MESSAGE: %v", trigger, err)
 			return nil, err
 		}
 		if klog.V(5) {
@@ -455,18 +455,21 @@ func evalBody(env cel.Env, variables map[string]interface{}, object map[interfac
 		return evalArrayObject(env, variables, nestedBody, depth );
 	} 
 
-	err := fmt.Errorf("body %v contains nested body that is not array of map[string]interface", nestedBodyObj)
+	err := fmt.Errorf("body %v contains nested body that is not []interface, but of type %T", nestedBodyObj, nestedBody)
 	return env, err
 }
 
 func evalIfWithSyntaxCheck(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeywords int, flags uint, depth int) (cel.Env, bool, error) {
+	if klog.V(6) {
+		klog.Infof("evalIfWithSyntaxCheck : %v", object)
+	}
 	if numKeywords > 2 {
 		err := fmt.Errorf("body of if %v contains more than two keyword", object)
 		return env, false, err
 	}
-	if numKeywords == 2 && (flags & BodyFlag) == 0  {
-		/* second keyword is not body */
-		err := fmt.Errorf("if also contains non-body keyword: %v", object)
+	if numKeywords == 2 && (flags & BodyFlag) == 0  && (flags & SwitchFlag) == 0  {
+		/* second keyword is not body or switch */
+		err := fmt.Errorf("if object also contains keywords other than body or switch: %v", object)
 		return env, false, err
 	}
 	if numKeywords == 2 && len(object) > 2 {
@@ -486,13 +489,26 @@ func evalIfWithSyntaxCheck(env cel.Env, variables map[string]interface{}, object
 
 	if !boolVal {
 		/* condition not met */
+		if klog.V(6) {
+			klog.Infof("evalIfWithSyntaxCheck condition not met: %v", condition)
+		}
 		return env, false, nil
 	}
 
+	if klog.V(6) {
+		klog.Infof("evalIfWithSyntaxCheck condition met: %v", condition)
+	}
 	_, ok = object[BODY]
 	if ok {
 		/* if statement also contains body */
 		env, err = evalBody(env, variables, object, numKeywords, flags, depth)
+		return env,  true, err
+	} 
+
+	_, ok = object[SWITCH]
+	if ok {
+		/* if statement also contains switch */
+		env, err = evalSwitch(env, variables, object, numKeywords, flags, depth)
 		return env,  true, err
 	} 
 
@@ -932,10 +948,10 @@ func readTriggerDefinition(fileName string, td *eventTriggerDefinition) error {
 					return fmt.Errorf("triggerMapObj %v not type map[interface{}]interface{}, but type %T", triggerMapObj, triggerMapObj)
 				}
 				eventSourceObj, ok := triggerMap[EVENTSOURCE]
-				if klog.V(5) {
-					klog.Infof("Found eventSource %v", eventSourceObj)
-				}
 				if ok {
+					if klog.V(5) {
+						klog.Infof("Found eventSource %v", eventSourceObj)
+					}
 					eventSource, ok := eventSourceObj.(string)
 					if ok {
 						existingArray, ok := td.eventTriggers[eventSource]
@@ -1088,7 +1104,7 @@ func substituteTemplateFile(fileName string, variables interface{}) (string, err
 		return "", err
 	}
 	str := string(bytes)
-	klog.Infof("Before template substitution for %s: %s", fileName, str)
+	klog.Infof("Before template substitution for %s: %s, variables type: %T", fileName, str, variables)
 	substituted, err := substituteTemplate(str, variables)
 	if err != nil {
 		klog.Errorf("Error in template substitution for %s: %s", fileName, err)
@@ -1441,7 +1457,7 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 
 	functionDecl, ok := triggerProc.triggerDef.functions[function]
 	if !ok {
-		klog.Infof("callCEL function %v not found", function)
+		klog.Errorf("callCEL function %v not found", function)
 		return types.ValOrErr(functionVal, "function %v not found", function)
 	}
 
@@ -1554,7 +1570,7 @@ func applyResourcesCEL(dir ref.Val, variables ref.Val) ref.Val {
 		return types.ValOrErr(dir, "unexpected type '%v' passed as first parameter to function applyResources. It should be string", dir.Type())
 	}
 
-	err := applyResourcesHelper(triggerProc.triggerDir, dirStr, variables, true)
+	err := applyResourcesHelper(triggerProc.triggerDir, dirStr, variables.Value(), true)
 	var ret ref.Val
 	if err != nil {
 		ret = types.String(fmt.Sprintf("applyResources error  applying template %v", err) )
@@ -1568,40 +1584,26 @@ func applyResourcesCEL(dir ref.Val, variables ref.Val) ref.Val {
 /* Find files with given suffixes */
 func findFiles(resourceDir string, suffixes []string) ([]string, error) {
 
-	files := make([] string, 0)
-	err := filepath.Walk(resourceDir, func(path string, info os.FileInfo, err error) error {
+	ret := make([]string, 0)
+	for _, suffix := range suffixes {
+		fileNames, err := filepath.Glob(resourceDir + "/" + "*" + suffix)
 		if err != nil {
-			// problem with accessing a path
-			klog.Errorf("findFiles: problem locating files from %s, error %s", path, err)
-			return err
+			return nil, err
 		}
-		if info.IsDir() {
-			// don't process directory itself
+		for _, fileName := range fileNames {
 			if klog.V(6) {
-				klog.Infof("findFiles processing directory %s", path)
+				klog.Infof("findFiles adding: %s", fileName)
 			}
-			return nil
+			ret = append(ret, fileName)
 		}
-		found := false
-		for _, suffix := range suffixes {
-			if strings.HasSuffix(info.Name(), suffix){
-				found = true
-				files = append(files, path)
-				break
-			}
-		}
-		if !found {
-			if klog.V(6){
-				klog.Infof("findFiles: skipping processing file %s", path)
-			}
-		}
-		return nil
-	})
-	return files, err
+	}
+	return ret, nil
 }
 
 func applyResourcesHelper(triggerDirectory string, directory string, variables interface{}, dryrun bool) error {
-	files, err := findFiles(triggerDirectory , []string{"yaml", "yml"})
+
+	resourceDir := filepath.Join(triggerDirectory, directory)
+	files, err := findFiles(resourceDir , []string{"yaml", "yml"})
 	if err != nil {
 		return err
 	}

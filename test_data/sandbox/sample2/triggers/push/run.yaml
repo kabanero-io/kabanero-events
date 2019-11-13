@@ -1,0 +1,17 @@
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineRun
+metadata:
+  name:  {{.nameSuffix}}
+  namespace: {{.namespace}}
+spec:
+  pipelineRef:
+    name: {{.collectionID}}-build-push-pipeline
+  resources:
+  - name: git-source
+    resourceRef:
+      name: git-{{.nameSuffix}}
+  - name: docker-image
+    resourceRef:
+      name: docker-{{.nameSuffix}}
+  serviceAccount: {{.serviceAccount}}
+  timeout: {{.timeout}}
