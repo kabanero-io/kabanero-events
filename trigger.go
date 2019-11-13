@@ -27,6 +27,7 @@ import (
 	"time"
 	"gopkg.in/yaml.v2"
 	"sync"
+	"encoding/json"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
@@ -1602,7 +1603,10 @@ func findFiles(resourceDir string, suffixes []string) ([]string, error) {
 
 func applyResourcesHelper(triggerDirectory string, directory string, variables interface{}, dryrun bool) error {
 
-	resourceDir := filepath.Join(triggerDirectory, directory)
+	resourceDir, err := mergePathWithErrorCheck(triggerDirectory , directory)
+	if err != nil {
+		return err
+	}
 	files, err := findFiles(resourceDir , []string{"yaml", "yml"})
 	if err != nil {
 		return err
@@ -1636,6 +1640,46 @@ func applyResourcesHelper(triggerDirectory string, directory string, variables i
 }
 
 
+/* implementation of sendEvent
+   eventDestination string: where to send the event
+   message Any: JSON message
+   Return string : empty if OK, otherwise, error message
+*/
+func sendEventCEL(destination ref.Val, message ref.Val) ref.Val {
+	if klog.V(6) {
+		klog.Infof("sendEventCEL first param: %v, second param: %v", destination, message)
+	}
+
+	if message.Value() == nil {
+		klog.Infof("sendEventCEL  message is nil")
+		return types.ValOrErr(message, "unexpected null message parameter passed to function sendEvent.") 
+	}
+
+	if destination.Value() == nil {
+		klog.Infof("sendEventCEL destination is nil")
+		return types.ValOrErr(destination, "unexpected null destination parameter passed to function sendEvent.") 
+	}
+	klog.Infof("sendEventCEL first param type: %v, second param type: %v", destination.Type(), message.Type())
+
+	_, ok := destination.Value().(string)
+	if !ok {
+		klog.Infof("sendEvent destination is not string")
+		return types.ValOrErr(destination, "unexpected type '%v' passed as destination parameter to function sendEventCEL. It should be string", destination.Type())
+	}
+
+	var ret ref.Val
+	value := message.Value()
+    bytes, err := json.Marshal(value)
+	if err != nil {
+		klog.Errorf("Unable to marshall as JSON: %v, type %T", value, value)
+		ret = types.String(fmt.Sprintf("sendEventCEL error applying sending message: %v", err) )
+	} else {
+		klog.Infof("in sendEvent message %v marshalled as: %s", value, string(bytes))
+		ret = types.String("")
+	}
+	return ret
+}
+
 /* Get declaration of additional overloaded CEL functions */
 func getAdditionalCELFuncDecls() cel.EnvOption{
 	return triggerFuncDecls
@@ -1654,6 +1698,8 @@ func init() {
 	triggerFuncDecls = cel.Declarations (
 		decls.NewFunction("call", 
 			decls.NewOverload("call_string_any_string", []*exprpb.Type{decls.String, decls.Any}, decls.Any)),
+		decls.NewFunction("sendEvent", 
+			decls.NewOverload("applyResources_string_any", []*exprpb.Type{decls.String, decls.Any}, decls.String)),
 		decls.NewFunction("applyResources", 
 			decls.NewOverload("applyResources_string_any", []*exprpb.Type{decls.String, decls.Any}, decls.String)),
 		decls.NewFunction("kabaneroConfig", 
@@ -1673,6 +1719,9 @@ func init() {
 		&functions.Overload{
 	        Operator: "call",
 	        Binary: callCEL} ,
+		&functions.Overload{
+	        Operator: "sendEvent",
+	        Binary: sendEventCEL} ,
 		&functions.Overload{
 	        Operator: "applyResources",
 	        Binary: applyResourcesCEL} ,

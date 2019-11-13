@@ -152,22 +152,24 @@ func getTriggerURL(collection map[string]interface{}) (string, string, error) {
 		}
 		retURL = url
 
-		chksumObj, ok := mapObj[CHKSUM]
-		if !ok {
-			return "", "", fmt.Errorf("triggers section at index %d does not contain sha256 checksum", index)
+		if !skipChkSumVerify {
+			chksumObj, ok := mapObj[CHKSUM]
+			if !ok {
+				return "", "", fmt.Errorf("triggers section at index %d does not contain sha256 checksum", index)
+			}
+			chksum, ok := chksumObj.(string)
+			if !ok {
+				return "", "", fmt.Errorf("triggers section at index %d is not a string: %v", index, chksumObj)
+			}
+			retChkSum = chksum
 		}
-		chksum, ok := chksumObj.(string)
-		if !ok {
-			return "", "", fmt.Errorf("triggers section at index %d is not a string: %v", index, chksumObj)
-		}
-		retChkSum = chksum
 	}
 
 	if retURL == "" {
 		return "", "", fmt.Errorf("unable to find url from triggers section")
 	}
 
-	if retChkSum == "" {
+	if !skipChkSumVerify && retChkSum == "" {
 		return "", "", fmt.Errorf("unable to find sha256 checksum from triggers section")
 	}
 

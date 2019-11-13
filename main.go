@@ -80,6 +80,9 @@ func main() {
 
 	flag.Parse()
 
+	klog.Infof("disableTLS: %v", disableTLS)
+	klog.Infof("skipChecksumVerify: %v", skipChkSumVerify)
+
 	var err error
 	var cfg *rest.Config
 	if strings.Compare(masterURL, "") != 0 {
