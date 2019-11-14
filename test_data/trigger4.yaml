@@ -1,7 +1,7 @@
-variables:
-  - name: str1
-    value: ' toDomainName("ABC..DEF")'
-  - name: str2
-    value: ' split("a/b/c/d", "/") '
-  - name: str3
-    value: ' str2[1] '
+eventTriggers:
+  - eventSource: default
+    input: event
+    body:
+      -  str1 : ' toDomainName("ABC..DEF")'
+      -  str2 : ' split("a/b/c/d", "/") '
+      -  str3 : ' str2[1] '

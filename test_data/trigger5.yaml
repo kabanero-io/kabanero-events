@@ -1,69 +1,38 @@
-variables:
-  - name: nested.int64Attr
-    value: 1
-  - name: nested.float64Attr
-    value: 1.2
-  - name: nested.boolAttr
-    value: true
-  - name: nested.arrayStringAttr
-    value: '[ "abc", "def", "ghi" ]'
-  - name: nested.arrayIntAttr
-    value: '[ 1, 2, 3 ]'
-  - name: nested.eventIntAttr
-    value: event.intAttr
-  - name: nested.eventFloatAttr
-    value: event.floatAttr
-  - name: nested.eventBoolAttr
-    value: event.boolAttr
-  - name: nested.eventArrayElementAttr
-    value: event.arrayAttr[0]
-  - name: nested.eventArrayAttr
-    value: event.arrayAttr
-  - name: nested.eventObjectAttr
-    value: event.objectAttr
-  - name: nested.eventObjectInnerFloatAttr
-    value: event.objectAttr.innerFloatAttr
-  - name: nested.mathAttr1
-    value: event.intAttr + 2.0
-  - name: nested.mathAttr2
-    value: event.floatAttr + 2.0
-  - name: nested.listAttrWithVariables
-    value: '[ "abc", event.stringAttr ]'
-  - name: nested.ifThenElseStringAttr
-    value: 'event.stringAttr == "string1" ? "got-string-1" : "no-string-1"'
-  - name: nested.reuseInt64Attr
-    value: nested.int64Attr
-  - name: nested.reuseFloat64Attr
-    value: nested.float64Attr
-  - name: nested.reuseboolAttr
-    value: nested.boolAttr
-  - name: nested.reusearrayStringAttr
-    value: nested.arrayStringAttr
-  - name: nested.reuseArrayIntAttr
-    value: nested.arrayIntAttr
-  - name: nested.reuseEventIntAttr
-    value: nested.eventIntAttr
-  - name: nested.reuseEventFloatAttr
-    value: nested.eventFloatAttr
-  - name: nested.reuseEventBoolAttr
-    value: nested.eventBoolAttr
-  - name: nested.reuseEventArrayElementAttr
-    value: nested.eventArrayElementAttr
-  - name: nested.reuseEventArrayAttr
-    value: nested.eventArrayAttr
-  - name: nested.reuseEventObjectAttr
-    value: nested.eventObjectAttr
-  - name: nested.reuseEventObjectInnerFloatAttr
-    value: nested.eventObjectInnerFloatAttr
-  - name: nested.reuseMathAttr1
-    value: nested.mathAttr1
-  - name: nested.reuseMathAttr2
-    value: nested.mathAttr2
-  - name: nested.reuseListAttrWithVariables
-    value: nested.listAttrWithVariables
-  - name: nested.reuseIfThenElseStringAttr
-    value: nested.ifThenElseStringAttr
-  - name: nested.nested1.int64Attr
-    value: 10
-  - name: nested.nested1.reuseInt64Attr
-    value: nested.nested1.int64Attr 
+eventTriggers:
+  - eventSource: default
+    input: event
+    body:
+      -  nested.int64Attr : 1
+      -  nested.float64Attr : 1.2
+      -  nested.boolAttr : true
+      -  nested.arrayStringAttr : '[ "abc", "def", "ghi" ]'
+      -  nested.arrayIntAttr : '[ 1, 2, 3 ]'
+      -  nested.eventIntAttr : event.intAttr
+      -  nested.eventFloatAttr : event.floatAttr
+      -  nested.eventBoolAttr : event.boolAttr
+      -  nested.eventArrayElementAttr : event.arrayAttr[0]
+      -  nested.eventArrayAttr : event.arrayAttr
+      -  nested.eventObjectAttr : event.objectAttr
+      -  nested.eventObjectInnerFloatAttr : event.objectAttr.innerFloatAttr
+      -  nested.mathAttr1 : event.intAttr + 2.0
+      -  nested.mathAttr2 : event.floatAttr + 2.0
+      -  nested.listAttrWithVariables : '[ "abc", event.stringAttr ]'
+      -  nested.ifThenElseStringAttr : 'event.stringAttr == "string1" ? "got-string-1" : "no-string-1"'
+      -  nested.reuseInt64Attr : nested.int64Attr
+      -  nested.reuseFloat64Attr : nested.float64Attr
+      -  nested.reuseboolAttr : nested.boolAttr
+      -  nested.reusearrayStringAttr : nested.arrayStringAttr
+      -  nested.reuseArrayIntAttr : nested.arrayIntAttr
+      -  nested.reuseEventIntAttr : nested.eventIntAttr
+      -  nested.reuseEventFloatAttr : nested.eventFloatAttr
+      -  nested.reuseEventBoolAttr : nested.eventBoolAttr
+      -  nested.reuseEventArrayElementAttr : nested.eventArrayElementAttr
+      -  nested.reuseEventArrayAttr : nested.eventArrayAttr
+      -  nested.reuseEventObjectAttr : nested.eventObjectAttr
+      -  nested.reuseEventObjectInnerFloatAttr : nested.eventObjectInnerFloatAttr
+      -  nested.reuseMathAttr1 : nested.mathAttr1
+      -  nested.reuseMathAttr2 : nested.mathAttr2
+      -  nested.reuseListAttrWithVariables : nested.listAttrWithVariables
+      -  nested.reuseIfThenElseStringAttr : nested.ifThenElseStringAttr
+      -  nested.nested1.int64Attr : 10
+      -  nested.nested1.reuseInt64Attr : nested.nested1.int64Attr 

@@ -1,0 +1,153 @@
+eventTriggers:
+  - eventSource: default
+    input: event
+    body:
+      -  nested.int64Attr : 1
+      -  nested.float64Attr : 1.2
+      -  nested.boolAttr : true
+      -  nested.arrayStringAttr : '[ "abc", "def", "ghi" ]'
+      -  nested.arrayIntAttr : '[ 1, 2, 3 ]'
+      -  nested.eventIntAttr : event.intAttr
+      -  nested.eventFloatAttr : event.floatAttr
+      -  nested.eventBoolAttr : event.boolAttr
+      -  nested.eventArrayElementAttr : event.arrayAttr[0]
+      -  nested.eventArrayAttr : event.arrayAttr
+      -  nested.eventObjectAttr : event.objectAttr
+      -  nested.eventObjectInnerFloatAttr : event.objectAttr.innerFloatAttr
+      -  nested.mathAttr1 : event.intAttr + 2.0
+      -  nested.mathAttr2 : event.floatAttr + 2.0
+      -  nested.listAttrWithVariables : '[ "abc", event.stringAttr ]'
+      -  nested.ifThenElseStringAttr : 'event.stringAttr == "string1" ? "got-string-1" : "no-string-1"'
+      -  nested.reuseInt64Attr : nested.int64Attr
+      -  nested.reuseFloat64Attr : nested.float64Attr
+      -  nested.reuseboolAttr : nested.boolAttr
+      -  nested.reusearrayStringAttr : nested.arrayStringAttr
+      -  nested.reuseArrayIntAttr : nested.arrayIntAttr
+      -  nested.reuseEventIntAttr : nested.eventIntAttr
+      -  nested.reuseEventFloatAttr : nested.eventFloatAttr
+      -  nested.reuseEventBoolAttr : nested.eventBoolAttr
+      -  nested.reuseEventArrayElementAttr : nested.eventArrayElementAttr
+      -  nested.reuseEventArrayAttr : nested.eventArrayAttr
+      -  nested.reuseEventObjectAttr : nested.eventObjectAttr
+      -  nested.reuseEventObjectInnerFloatAttr : nested.eventObjectInnerFloatAttr
+      -  nested.reuseMathAttr1 : nested.mathAttr1
+      -  nested.reuseMathAttr2 : nested.mathAttr2
+      -  nested.reuseListAttrWithVariables : nested.listAttrWithVariables
+      -  nested.reuseIfThenElseStringAttr : nested.ifThenElseStringAttr
+      -  nested.nested1.int64Attr : 10
+      -  nested.nested1.reuseInt64Attr : nested.nested1.int64Attr 
+      -  temp.result : ' call("duplicate", nested) '
+      -  temp.final: true
+      -  if: ' nested.int64Attr  !=  temp.result.int64Attr '
+         temp.final: false
+      -  if: ' nested.float64Attr != temp.result.float64Attr '
+         temp.final: false
+      -  if: ' nested.boolAttr != temp.result.boolAttr '
+         temp.final: false
+      -  if: ' nested.arrayStringAttr != temp.result.arrayStringAttr '
+         temp.final: false
+      -  if: ' nested.arrayIntAttr != temp.result.arrayIntAttr '
+         temp.final: false
+      -  if: ' nested.eventIntAttr != temp.result.eventIntAttr '
+         temp.final: false
+      -  if: ' nested.eventFloatAttr != temp.result.eventFloatAttr '
+         temp.final: false
+      -  if: ' nested.eventBoolAttr != temp.result.eventBoolAttr '
+         temp.final: false
+      -  if: ' nested.eventArrayElementAttr != temp.result.eventArrayElementAttr '
+         temp.final: false
+      -  if: ' nested.eventArrayAttr != temp.result.eventArrayAttr '
+         temp.final: false
+      -  if: ' nested.eventObjectAttr != temp.result.eventObjectAttr '
+         temp.final: false
+      -  if: ' nested.eventObjectInnerFloatAttr != nested.eventObjectInnerFloatAttr '
+         temp.final: false
+      -  if: ' nested.mathAttr1 != temp.result.mathAttr1 '
+         temp.final: false
+      -  if: ' nested.mathAttr2 != temp.result.mathAttr2 '
+         temp.final: false
+      -  if: ' nested.listAttrWithVariables != temp.result.listAttrWithVariables '
+         temp.final: false
+      -  if: ' nested.mathAttr2 != temp.result.mathAttr2 '
+         temp.final: false
+      -  if: ' nested.ifThenElseStringAttr != temp.result.ifThenElseStringAttr '
+         temp.final: false
+      -  if: ' nested.reuseInt64Attr != temp.result.reuseInt64Attr '
+         temp.final: false
+      -  if: ' nested.reuseFloat64Attr != temp.result.reuseFloat64Attr '
+         temp.final: false
+      -  if: ' nested.reuseboolAttr != temp.result.reuseboolAttr '
+         temp.final: false
+      -  if: ' nested.reusearrayStringAttr != temp.result.reusearrayStringAttr '
+         temp.final: false
+      -  if: ' nested.reuseboolAttr != temp.result.reuseboolAttr '
+         temp.final: false
+      -  if: ' nested.reuseArrayIntAttr != temp.result.reuseArrayIntAttr '
+         temp.final: false
+      -  if: ' nested.reuseEventIntAttr != temp.result.reuseEventIntAttr '
+         temp.final: false
+      -  if: ' nested.reuseEventFloatAttr != temp.result.reuseEventFloatAttr '
+         temp.final: false
+      -  if: ' nested.reuseEventBoolAttr != temp.result.reuseEventBoolAttr '
+         temp.final: false
+      -  if: ' nested.reuseEventArrayElementAttr != temp.result.reuseEventArrayElementAttr '
+         temp.final: false
+      -  if: ' nested.reuseEventBoolAttr != temp.result.reuseEventBoolAttr '
+         temp.final: false
+      -  if: ' nested.reuseEventArrayAttr != temp.result.reuseEventArrayAttr '
+         temp.final: false
+      -  if: ' nested.reuseEventObjectAttr != temp.result.reuseEventObjectAttr '
+         temp.final: false
+      -  if: ' nested.reuseEventObjectInnerFloatAttr != temp.result.reuseEventObjectInnerFloatAttr '
+         temp.final: false
+      -  if: ' nested.reuseMathAttr1 != temp.result.reuseMathAttr1 '
+         temp.final: false
+      -  if: ' nested.reuseMathAttr2 != temp.result.reuseMathAttr2 '
+         temp.final: false
+      -  if: ' nested.reuseListAttrWithVariables != temp.result.reuseListAttrWithVariables '
+         temp.final: false
+      -  if: ' nested.reuseIfThenElseStringAttr != temp.result.reuseIfThenElseStringAttr '
+         temp.final: false
+      -  if: ' nested.nested1.int64Attr != temp.result.nested1.int64Attr '
+         temp.final: false
+      -  if: ' nested.nested1.reuseInt64Attr != temp.result.nested1.reuseInt64Attr '
+         temp.final: false
+functions:
+  - name: duplicate
+    input: message
+    output: output
+    body:
+      -  output.int64Attr :  message.int64Attr 
+      -  output.float64Attr :  message.float64Attr 
+      -  output.boolAttr :  message.boolAttr 
+      -  output.arrayStringAttr :  message.arrayStringAttr 
+      -  output.arrayIntAttr :  message.arrayIntAttr 
+      -  output.eventIntAttr :  message.eventIntAttr 
+      -  output.eventFloatAttr :  message.eventFloatAttr 
+      -  output.eventBoolAttr :  message.eventBoolAttr 
+      -  output.eventArrayElementAttr :  message.eventArrayElementAttr 
+      -  output.eventArrayAttr :  message.eventArrayAttr 
+      -  output.eventObjectAttr :  message.eventObjectAttr 
+      -  output.eventObjectInnerFloatAttr :  message.eventObjectInnerFloatAttr 
+      -  output.mathAttr1 :  message.mathAttr1 
+      -  output.mathAttr2 :  message.mathAttr2 
+      -  output.listAttrWithVariables :  message.listAttrWithVariables 
+      -  output.ifThenElseStringAttr :  message.ifThenElseStringAttr 
+      -  output.reuseInt64Attr :  message.reuseInt64Attr 
+      -  output.reuseFloat64Attr :  message.reuseFloat64Attr 
+      -  output.reuseboolAttr :  message.reuseboolAttr 
+      -  output.reusearrayStringAttr :  message.reusearrayStringAttr 
+      -  output.reuseArrayIntAttr :  message.reuseArrayIntAttr 
+      -  output.reuseEventIntAttr :  message.reuseEventIntAttr 
+      -  output.reuseEventFloatAttr :  message.reuseEventFloatAttr 
+      -  output.reuseEventBoolAttr :  message.reuseEventBoolAttr 
+      -  output.reuseEventArrayElementAttr :  message.reuseEventArrayElementAttr 
+      -  output.reuseEventArrayAttr :  message.reuseEventArrayAttr 
+      -  output.reuseEventObjectAttr :  message.reuseEventObjectAttr 
+      -  output.reuseEventObjectInnerFloatAttr :  message.reuseEventObjectInnerFloatAttr 
+      -  output.reuseMathAttr1 :  message.reuseMathAttr1 
+      -  output.reuseMathAttr2 :  message.reuseMathAttr2 
+      -  output.reuseListAttrWithVariables :  message.reuseListAttrWithVariables 
+      -  output.reuseIfThenElseStringAttr :  message.reuseIfThenElseStringAttr 
+      -  output.nested1.int64Attr :  message.nested1.int64Attr 
+      -  output.nested1.reuseInt64Attr :  message.nested1.reuseInt64Attr 

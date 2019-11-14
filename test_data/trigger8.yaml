@@ -1,0 +1,19 @@
+eventTriggers:
+  - eventSource: default
+    input: event
+    body:
+      - sum1: ' call("sum", 0) '
+      - number2: 5
+      - sum2: ' call("sum", 5) '
+      - number3: 10 
+      - sum3: ' call("sum", 10) '
+functions:
+  - name: sum
+    input: input
+    output: output
+    body:
+      - switch:
+          - if : 'input <= 0'
+            output : input
+          - default:
+            - output: ' input + call("sum", input- 1)'

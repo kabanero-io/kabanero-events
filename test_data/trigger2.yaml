@@ -1,26 +1,18 @@
-variables:
-  - name: var1
-    value: event.attr1
-  - name: var2
-    value: event.attr2
 eventTriggers:
-  - when: 'var1 == "string1"'
-    eventTriggers:
-      - when: 'var2 == "string2"'
-        action:
-          applyResources:
-            directory: 'string1string2'
-      - when: 'var2 != "string2"'
-        action:
-          applyResources:
-            directory: 'string1notstring2'
-  - when: 'var1 != "string1"'
-    eventTriggers:
-      - when: 'var2 == "string2"'
-        action:
-          applyResources:
-            directory: 'notstring1string2'
-      - when: 'var2 != "string2"'
-        action:
-          applyResources:
-            directory: 'notstring1notstring2'
+  - eventSource: default
+    input: event
+    body:
+      - var1 : event.attr1
+      - var2 : event.attr2
+      - if : 'var1 == "string1"'
+        body:
+          - if: 'var2 == "string2"'
+            directory: ' "string1string2" '
+          - if : 'var2 != "string2"'
+            directory: ' "string1notstring2" '
+      - if : 'var1 != "string1"'
+        body:
+          - if: 'var2 == "string2"'
+            directory: ' "notstring1string2" '
+          - if: 'var2 != "string2" '
+            directory: ' "notstring1notstring2" '

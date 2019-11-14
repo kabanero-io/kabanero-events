@@ -19,6 +19,9 @@ const (
 	TRIGGER3 = "test_data/trigger3.yaml"
 	TRIGGER4 = "test_data/trigger4.yaml"
 	TRIGGER5 = "test_data/trigger5.yaml"
+	TRIGGER6 = "test_data/trigger6.yaml"
+	TRIGGER7 = "test_data/trigger7.yaml"
+	TRIGGER8 = "test_data/trigger8.yaml"
 )
 
 /* Simaple test to read data structure*/
@@ -30,8 +33,8 @@ initialize:
   - name: name2
     value: value2
 `
-	var triggerDef EventTriggerDefinition
-	err := yaml.Unmarshal([]byte(trigger), &triggerDef)
+	mapObj := make(map[string]interface{})
+	err := yaml.Unmarshal([]byte(trigger), mapObj)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,14 +47,19 @@ func TestReadYaml(t *testing.T) {
 	}
 
 	for _, fileName := range files {
-		triggerDef, err := readTriggerDefinition(fileName)
+		td := &eventTriggerDefinition {
+			setting: []map[interface{}]interface{}{},
+			eventTriggers: make(map[string] []map[interface{}]interface{}),
+			functions: make(map[string]map[interface{}]interface{}),
+		}
+		err := readTriggerDefinition(fileName, td)
 		if err != nil {
 			t.Fatal(err)
 			break
 		}
-		fmt.Print(triggerDef)
 	}
 }
+
 
 /* This is not so much a unit test as an experiment to get CEL to use map[string]interface{] as variable definition*/
 func TestCEL(t *testing.T) {
@@ -115,6 +123,7 @@ func TestJSON(t *testing.T) {
 	}
 	fmt.Printf("%T, %T, %T, %T, %T %T\n", m["float"], m["int"], m["bool"], m["array"], m["array"].([]interface{})[0], m["array"].([]interface{})[1])
 }
+
 
 /* Test applying template using map[string]interface{}*/
 func TestGoTemplate(t *testing.T) {
@@ -236,23 +245,25 @@ got-string-1
 
 /* Test applying template using CEL variables */
 func TestApplyTemplateWithCELVariables(t *testing.T) {
-	srcEvent := []byte(`{ "event":  {"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} }} `)
+	srcEvent := []byte(`{"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} } `)
 	var event map[string]interface{}
 	err := json.Unmarshal(srcEvent, &event)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	triggerDef, err := readTriggerDefinition(TRIGGER1)
+	tp := newTriggerProcessor()
+	err = tp.initialize(TRIGGER1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, variables, _, err1 := initializeCELEnv(triggerDef, event)
-	if err1 != nil {
-		t.Fatal(err1)
+
+	variables, err := tp.processMessage(event, "default")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	afterSubstitution, err2 := substituteTemplate(testTemplate, variables)
+	afterSubstitution, err2 := substituteTemplate(testTemplate, variables[0])
 	if err2 != nil {
 		t.Fatal(err2)
 	}
@@ -265,13 +276,20 @@ func TestApplyTemplateWithCELVariables(t *testing.T) {
 
 func TestConditionalVariable(t *testing.T) {
 	srcEvents := [][] byte {
-		[]byte(`{ "event": {"attr1": "string1", "attr2": "string2"} }`),
-		[]byte(`{ "event": {"attr1": "string1a", "attr2": "string2"} }`),
-		[]byte(`{ "event": {"attr1": "string1", "attr2": "string2a"}}`),
-		[]byte(`{ "event": {"attr1": "string1a", "attr2": "string2a"} }`),
+		[]byte(`{"attr1": "string1", "attr2": "string2"}`),
+		[]byte(`{"attr1": "string1a", "attr2": "string2"}`),
+		[]byte(`{"attr1": "string1", "attr2": "string2a"}`),
+		[]byte(`{"attr1": "string1a", "attr2": "string2a"}`),
 	}
 
+/*
 	triggerDef, err := readTriggerDefinition(TRIGGER3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	*/
+	tp := newTriggerProcessor()
+	err := tp.initialize(TRIGGER3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,23 +299,26 @@ func TestConditionalVariable(t *testing.T) {
 	}
 
 	for index, srcBytes := range srcEvents {
-		if err = testOneConditional(triggerDef, srcBytes, expectedDirs[index]); err != nil {
+		if err = testOneConditional(tp, srcBytes, expectedDirs[index]); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-func testOneConditional(triggerDef *EventTriggerDefinition, srcEvent []byte, expectedDirectory  string) error {
+func testOneConditional(tp *triggerProcessor, srcEvent []byte, expectedDirectory  string) error {
 	var event map[string]interface{}
 	err := json.Unmarshal(srcEvent, &event)
 	if err != nil {
 		return err
 	}
-	_, variables, _, err := initializeCELEnv(triggerDef, event)
+
+
+	variablesArray, err := tp.processMessage(event, "default")
 	if err != nil {
 		return err
 	}
 
+	variables := variablesArray[0]
 	dir, ok := variables["directory"]
 	if !ok {
 		return fmt.Errorf("Unable to locate variable directory")
@@ -309,54 +330,56 @@ func testOneConditional(triggerDef *EventTriggerDefinition, srcEvent []byte, exp
 	return nil
 }
 
-func TestFindTrigger(t *testing.T) {
-	srcEvents := [][]byte {
-		[]byte(`{ "event" : {"attr1": "string1", "attr2": "string2"}}`),
-		[]byte(`{ "event" : {"attr1": "string1a", "attr2": "string2"}}`),
-		[]byte(`{ "event" : {"attr1": "string1", "attr2": "string2a"}}`),
-		[]byte(`{ "event" : {"attr1": "string1a", "attr2": "string2a"}}`),
-	}
+//func TestFindTrigger(t *testing.T) {
+//	srcEvents := [][]byte {
+//		[]byte(`{ "event" : {"attr1": "string1", "attr2": "string2"}}`),
+//		[]byte(`{ "event" : {"attr1": "string1a", "attr2": "string2"}}`),
+//		[]byte(`{ "event" : {"attr1": "string1", "attr2": "string2a"}}`),
+//		[]byte(`{ "event" : {"attr1": "string1a", "attr2": "string2a"}}`),
+//	}
+//
+//
+//	triggerDef, err := readTriggerDefinition(TRIGGER2)
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//
+//	expectedDirs := []string{
+//		"string1string2", "notstring1string2", "string1notstring2", "notstring1notstring2",
+//	}
+//
+//	for index, srcBytes := range srcEvents {
+//		if err = testEvent(triggerDef, srcBytes, expectedDirs[index]); err != nil {
+//			t.Fatal(err)
+//		}
+//	}
+//}
+//
+//func testEvent(triggerDef *EventTriggerDefinition, srcEvent []byte, expectedDirectory string) error {
+//	var event map[string]interface{}
+//	err := json.Unmarshal(srcEvent, &event)
+//	if err != nil {
+//		return err
+//	}
+//	env, variables, _, err := initializeCELEnv(triggerDef, event)
+//	if err != nil {
+//		return err
+//	}
+//	action, err := findTrigger(env, triggerDef, variables)
+//	if err != nil {
+//		return err
+//	}
+//
+//	if action == nil {
+//		return fmt.Errorf("in testEvent, no action found")
+//	}
+//	if action.ApplyResources.Directory != expectedDirectory {
+//		return fmt.Errorf("Expecting directory %s but got %s", expectedDirectory, action.ApplyResources.Directory)
+//	}
+//	return nil
+//}
 
 
-	triggerDef, err := readTriggerDefinition(TRIGGER2)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	expectedDirs := []string{
-		"string1string2", "notstring1string2", "string1notstring2", "notstring1notstring2",
-	}
-
-	for index, srcBytes := range srcEvents {
-		if err = testEvent(triggerDef, srcBytes, expectedDirs[index]); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-func testEvent(triggerDef *EventTriggerDefinition, srcEvent []byte, expectedDirectory string) error {
-	var event map[string]interface{}
-	err := json.Unmarshal(srcEvent, &event)
-	if err != nil {
-		return err
-	}
-	env, variables, _, err := initializeCELEnv(triggerDef, event)
-	if err != nil {
-		return err
-	}
-	action, err := findTrigger(env, triggerDef, variables)
-	if err != nil {
-		return err
-	}
-
-	if action == nil {
-		return fmt.Errorf("in testEvent, no action found")
-	}
-	if action.ApplyResources.Directory != expectedDirectory {
-		return fmt.Errorf("Expecting directory %s but got %s", expectedDirectory, action.ApplyResources.Directory)
-	}
-	return nil
-}
 
 func TestTimestamp(t *testing.T) {
 	next := ""	
@@ -371,19 +394,29 @@ func TestTimestamp(t *testing.T) {
 	fmt.Printf("Last timestamp is : %s\n", last)
 }
 
+
 func TestAdditionalfunctions(t *testing.T) {
 
+/*
 	triggerDef, err := readTriggerDefinition(TRIGGER4)
 	if err != nil {
 		t.Error(err)
 	}
+	*/
 
-	var event map[string]interface{}
-	_, variables, _, err := initializeCELEnv(triggerDef, event)
+	tp := newTriggerProcessor()
+	err := tp.initialize(TRIGGER4)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
+	event := make(map[string]interface{})
+	variablesArray, err := tp.processMessage(event, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	variables := variablesArray[0]
 	str1, ok := variables["str1"]
 	if !ok {
 		t.Errorf("Unable to locate variable str1")
@@ -519,13 +552,14 @@ got-string-1
 
 /* Test double nested variables */
 func TestDoubleNestedCELVariables(t *testing.T) {
-	srcEvent := []byte(`{ "event":  {"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} }} `)
+	srcEvent := []byte(` {"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} }`)
 	var event map[string]interface{}
 	err := json.Unmarshal(srcEvent, &event)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+/*
 	triggerDef, err := readTriggerDefinition(TRIGGER5)
 	if err != nil {
 		t.Fatal(err)
@@ -535,6 +569,18 @@ func TestDoubleNestedCELVariables(t *testing.T) {
 		t.Fatal(err1)
 	}
 
+*/
+	tp := newTriggerProcessor()
+	err = tp.initialize(TRIGGER5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	variablesArray, err := tp.processMessage(event, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	variables := variablesArray[0]
 	afterSubstitution, err2 := substituteTemplate(testNestedVariableTemplate, variables)
 	if err2 != nil {
 		t.Fatal(err2)
@@ -545,4 +591,110 @@ func TestDoubleNestedCELVariables(t *testing.T) {
 	if nestedVariableResult != afterSubstitution {
 		t.Fatalf("template substitution is not as expected: Expecting: '%s', but received: '%s'", nestedVariableResult,afterSubstitution)
 	}
+}
+
+
+func TestSwitch(t *testing.T) {
+	srcEvents := [][] byte {
+		[]byte(`{"attr1": "string1", "attr2": "string2"}`),
+		[]byte(`{"attr1": "string1a", "attr2": "string2"}`),
+		[]byte(`{"attr1": "string1", "attr2": "string2a"}`),
+		[]byte(`{"attr1": "string1a", "attr2": "string2a"}`),
+	}
+
+	tp := newTriggerProcessor()
+	err := tp.initialize(TRIGGER6)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedDirs := []string{
+		"string1string2", "notstring1string2", "string1notstring2", "notstring1notstring2",
+	}
+
+	for index, srcBytes := range srcEvents {
+		if err = testOneSwitch(tp, srcBytes, expectedDirs[index]); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func testOneSwitch(tp *triggerProcessor, srcEvent []byte, expectedDirectory  string) error {
+	var event map[string]interface{}
+	err := json.Unmarshal(srcEvent, &event)
+	if err != nil {
+		return err
+	}
+
+
+	variablesArray, err := tp.processMessage(event, "default")
+	if err != nil {
+		return err
+	}
+
+	variables := variablesArray[0]
+	dir, ok := variables["directory"]
+	if !ok {
+		return fmt.Errorf("Unable to locate variable directory")
+	}
+	if dir != expectedDirectory {
+		return fmt.Errorf("directory value %v is not expected value %s", dir, expectedDirectory)
+	}
+
+	return nil
+}
+
+func TestCall(t *testing.T) {
+	srcEvent := []byte(`{"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} } `)
+	var event map[string]interface{}
+	err := json.Unmarshal(srcEvent, &event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+
+	// Need to set global triggerProc variable
+	triggerProc = newTriggerProcessor()
+	err = triggerProc.initialize(TRIGGER7)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	variables, err := triggerProc.processMessage(event, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Variables: %v", variables)
+
+	/* compare nested with temp.result */
+	temp := variables[0]["temp"].(map[string]interface{})
+	final := temp["final"]
+	finalBool := final.(bool)
+	if !finalBool {
+		t.Fatal(fmt.Errorf("result between nested and temp.result do not match. Final variables: %v", variables))
+	}
+}
+
+func TestRecursiveCall(t *testing.T) {
+	srcEvent := []byte(`{"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} } `)
+	var event map[string]interface{}
+	err := json.Unmarshal(srcEvent, &event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+
+	// Need to set global triggerProc variable
+	triggerProc = newTriggerProcessor()
+	err = triggerProc.initialize(TRIGGER8)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	variables, err := triggerProc.processMessage(event, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Variables: %v", variables)
+
 }

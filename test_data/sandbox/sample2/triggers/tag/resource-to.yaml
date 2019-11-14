@@ -1,0 +1,10 @@
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: docker-to-{{.nameSuffix}}
+  namespace: {{.namespace}}
+spec:
+  params:
+  - name: url
+    value: {{.tag.toRegistry}}
+  type: image

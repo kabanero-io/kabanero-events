@@ -60,18 +60,12 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	topLevelMessage := make(map[string]interface{})
 
 	message := make(map[string]interface{})
-	topLevelMessage[MESSAGE] = message
+	message[HEADER] = map[string][]string(header)
+	message[BODY] = bodyMap
 
-	webhook := make(map[string]interface{})
-	message[WEBHOOK] = webhook
-
-	webhook[HEADER] = map[string][]string(header)
-	webhook[BODY] = bodyMap
-
-	err = triggerProc.processMessage(topLevelMessage)
+	_, err = triggerProc.processMessage(message, "github")
 	if err != nil {
 		klog.Errorf("Error processing webhook message: %v", err)
 	}

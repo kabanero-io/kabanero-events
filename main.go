@@ -80,6 +80,9 @@ func main() {
 
 	flag.Parse()
 
+	klog.Infof("disableTLS: %v", disableTLS)
+	klog.Infof("skipChecksumVerify: %v", skipChkSumVerify)
+
 	var err error
 	var cfg *rest.Config
 	if strings.Compare(masterURL, "") != 0 {
@@ -141,9 +144,8 @@ func main() {
 		klog.Fatal(fmt.Errorf("unable to download trigger pointed by kabanero_index_url at: %s, error: %s", kabaneroIndexURL, err))
 	}
 
-	triggerFileName := filepath.Join(dir, "eventTriggers.yaml")
 	triggerProc = &triggerProcessor{}
-	err = triggerProc.initialize(triggerFileName)
+	err = triggerProc.initialize(dir)
 	if err != nil {
 		klog.Fatal(fmt.Errorf("unable to initialize trigger definition: %s", err))
 	}

@@ -1,0 +1,19 @@
+eventTriggers:
+  - eventSource: default
+    input: event
+    body:
+      - switch:
+        - if: 'event.attr1 == "string1"'
+          body:
+            - switch:
+              - if : 'event.attr2 == "string2"'
+                directory : ' "string1string2" '
+              - default:
+                - directory : '"string1notstring2"'
+        - if: 'event.attr1 != "string1"'
+          body:
+            - switch:
+              - if : 'event.attr2 == "string2"'
+                directory : '"notstring1string2"'
+              - default:
+                - directory : '"notstring1notstring2"'

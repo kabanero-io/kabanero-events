@@ -1,0 +1,47 @@
+settings:
+  dryrun: true
+eventTriggers:
+  - eventSource: github
+    input: message
+    body:
+#     Initialize
+      - build: 'call("preprocessGithubWebhook", message)'
+      - kabanero : 'kabaneroConfig()'
+ ###################################################################
+ #    CUSTOMIZE THESE
+ ###################################################################33
+ #    *** General Build Related ***
+      - build.namespace : ' kabanero.namespace ' 
+      - build.timeout : ' "1h0m0s" '
+      - build.jobid : ' jobID() '
+      - build.nameSuffix: toDomainName( build.ownerLogin + "-" + build.repositoryName + "-" + build.event + "-" + build.jobid)
+      - build.defaultRegistry : ' "image-registry.openshift-image-registry.svc:5000" '
+      - build.serviceAccount : ' "kabanero-operator" '
+#     *** Push ****
+      - if: ' build.event == "push" '
+        body:
+          - build.push.allowedBranches : ' [ "master" ] '
+          - build.push.toRegistry: ' build.defaultRegistry + "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.push.sha'
+#     *** Pull Request ***
+      - if: '  build.event == "pr" '
+        body:
+          - build.pr.allowedBranches:  ' [ "master" ] '
+#    *** Tag ***
+      - if: ' build.event == "tag" '
+        body:
+          - build.tag.pattern : '"\\d\\.\\d\\.\\d"' # only tags that follow this pattern are processed.
+          - build.tag.promoteToNamespace : ' build.repositoryName + "-test" '
+          - build.tag.fromRegistry : ' build.defaultRegistry+ "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.tag.sha '
+          - build.tag.toRegistry : 'build.defaultRegistry+ "/" + build.tag.promoteToNamespace + "/" +  build.repositoryName + ":" + build.tag.version '
+ ###################################################################
+ #    END CUSTOMIZATION 
+ ###################################################################33
+      - if : 'has(build.collectionID) '
+        #****************** Appsody Build ************************
+        switch:
+          - if: 'build.event == "push"  && build.push.branch in build.push.allowedBranches'
+            temp.pushResult : 'applyResources("push", build)'
+          - if : 'build.event == "pr"  && build.pr.branch in build.pr.allowedBranches  && (build.pr.action == "opened" || build.pr.action == "synchronize") '
+            temp.prResult : 'applyResources("pull", build)'
+          - if: ' build.event == "tag" '
+            temp.tagResult : 'applyResources("tag", build)'

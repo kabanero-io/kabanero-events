@@ -1,18 +1,13 @@
-variables:
-  - name: name1
-    value: value1
-  - name: name2
-    value: value2
 eventTriggers:
-  - when: triggercond0
-    action:
-      applyResources:
-        directory: dir1
-  - when: triggercond1
-    eventTriggers:
-      - when: triggercond2
-        eventTriggers:
-          - when: triggercond3
-            action:
-              applyResources:
-                directory: dir2
+  - eventSource: default
+    body:
+      - name1 : value1
+      - name2 : value2
+      - if : triggercond0
+        result: ' applyResources("dir1") '
+      - if : triggercond1
+        body:
+          - if: triggercond2
+            body:
+              - if: triggercond3
+                result2: ' applyResources("dir2") '
