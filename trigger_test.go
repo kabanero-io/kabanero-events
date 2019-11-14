@@ -13,15 +13,16 @@ import (
 )
 
 const (
-	TRIGGER0 = "test_data/trigger0.yaml"
-	TRIGGER1 = "test_data/trigger1.yaml"
-	TRIGGER2 = "test_data/trigger2.yaml"
-	TRIGGER3 = "test_data/trigger3.yaml"
-	TRIGGER4 = "test_data/trigger4.yaml"
-	TRIGGER5 = "test_data/trigger5.yaml"
-	TRIGGER6 = "test_data/trigger6.yaml"
-	TRIGGER7 = "test_data/trigger7.yaml"
-	TRIGGER8 = "test_data/trigger8.yaml"
+	TRIGGER0 = "test_data/trigger0"
+	TRIGGER1 = "test_data/trigger1"
+	TRIGGER2 = "test_data/trigger2"
+	TRIGGER3 = "test_data/trigger3"
+	TRIGGER4 = "test_data/trigger4"
+	TRIGGER5 = "test_data/trigger5"
+	TRIGGER6 = "test_data/trigger6"
+	TRIGGER7 = "test_data/trigger7"
+	TRIGGER8 = "test_data/trigger8"
+	TRIGGER9 = "test_data/trigger9"
 )
 
 /* Simaple test to read data structure*/
@@ -43,7 +44,7 @@ initialize:
 /* Test reading trigger yaml files withou errors*/
 func TestReadYaml(t *testing.T) {
 	var files = []string{
-		TRIGGER0,
+		TRIGGER0+"/trigger0.yaml",
 	}
 
 	for _, fileName := range files {
@@ -687,6 +688,30 @@ func TestRecursiveCall(t *testing.T) {
 	// Need to set global triggerProc variable
 	triggerProc = newTriggerProcessor()
 	err = triggerProc.initialize(TRIGGER8)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	variables, err := triggerProc.processMessage(event, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Variables: %v", variables)
+
+}
+
+func TestFilter(t *testing.T) {
+	srcEvent := []byte(`{"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} } `)
+	var event map[string]interface{}
+	err := json.Unmarshal(srcEvent, &event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+
+	// Need to set global triggerProc variable
+	triggerProc = newTriggerProcessor()
+	err = triggerProc.initialize(TRIGGER9)
 	if err != nil {
 		t.Fatal(err)
 	}
