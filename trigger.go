@@ -1520,7 +1520,18 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 		return types.ValOrErr(types.NewDynamicMap(types.DefaultTypeAdapter, variables), "error calling function %v: output variable %v not set by function", function, output)
 	} 
 
+	ret, err := convertToRefVal(outValueObj)
+	if err != nil {
+		return types.ValOrErr(types.NewDynamicMap(types.DefaultTypeAdapter, variables), "while calling function %v: return value  %v has unsupproted type %T", function, outValueObj, outValueObj)
+	}
+	return ret
+}
+
+/* Convert a value to ref.Val
+*/
+func convertToRefVal(outValueObj interface{}) (ref.Val, error) {
 	var ret ref.Val // return value
+	var err error = nil
 	switch outValueObj.(type) {
 	case bool:
 		ret = types.Bool(outValueObj.(bool))
@@ -1539,12 +1550,11 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 	case [] interface{}:
 		ret = types.NewDynamicList(types.DefaultTypeAdapter, ret)
 	default:
-		return types.ValOrErr(types.NewDynamicMap(types.DefaultTypeAdapter, variables), "function %v return value  %v has unsupproted type %T", function, outValueObj, outValueObj)
-
+		ret = nil
+		err = fmt.Errorf("Unable to convert %v of type %T to rev.Val",  outValueObj, outValueObj)
 	}
-	return ret
+	return ret, err
 }
-
 
 /* implementation of call for applyResources. 
    dir string: directory
@@ -1680,6 +1690,59 @@ func sendEventCEL(destination ref.Val, message ref.Val) ref.Val {
 	return ret
 }
 
+/* implementation of filter
+   message: map or array to be filtered
+   expression string: expression used to filter each element of the map or array, must return a bool
+       For a map, the variables key and value are bound as variables to be used in the epxress
+       For an array, the variable value is bound to be used.
+   Return map or array with elements filtered
+   Example:
+        newHader : ' filter(header, " key.startsWith(\"X-Github\") || key.startsWith(\"github\")) '
+		newArray: ' filter(oldArray, " value < 10 " )
+*/
+func filterCEL(message ref.Val, expression ref.Val) ref.Val {
+	if klog.V(6) {
+		klog.Infof("filterCEL first param: %v, second param: %v", message, expression)
+	}
+
+	messageVal := message.Value()
+	if messageVal == nil {
+		klog.Infof("filterCEL  message is nil")
+		return types.ValOrErr(message, "unexpected null message parameter passed to function filter.") 
+	}
+
+	expressionVal := expression.Value()
+	if expressionVal == nil {
+		klog.Infof("filterCEL expression is nil")
+		return types.ValOrErr(expression, "unexpected null expression parameter passed to function filter.") 
+	}
+	klog.Infof("filterCEL first param type: %v, %T, second param type: %v, %T",  message.Type(), messageVal, expression.Type(), expressionVal)
+
+	_, ok := expressionVal.(string)
+	if !ok {
+		klog.Infof("filter expression %v is not string", expressionVal)
+		return types.ValOrErr(expression, "unexpected type '%v' passed as destination parameter to function filter. It should be string", expression.Type())
+	}
+	ret, _ := convertToRefVal("test")
+	return ret
+	
+
+/*
+	variables := make(map[string]interface{})
+	env, err := initializeEmptyCELEnv() 
+	if err != nil {
+		klog.Infof("filterCEL function %v Unable to initialize CEL environment", function)
+		return types.ValOrErr(filterCEL, "callCEL Unable to initialize CEL environment. Error: %v ", err)
+	}
+
+	env, err = createOneVariable(env,  "", param , variables)
+	if err != nil {
+		klog.Infof("callCEL function %v unable to create input variable %v for %v", function, input, param)
+		return types.ValOrErr(param, "callCEL Unable to initialize CEL environment. Error: %v ", err)
+	}
+*/
+}
+
 /* Get declaration of additional overloaded CEL functions */
 func getAdditionalCELFuncDecls() cel.EnvOption{
 	return triggerFuncDecls
@@ -1696,6 +1759,8 @@ var triggerFuncs cel.ProgramOption
 
 func init() {
 	triggerFuncDecls = cel.Declarations (
+		decls.NewFunction("filter", 
+			decls.NewOverload("filter_any_string", []*exprpb.Type{ decls.Any, decls.String}, decls.Any)),
 		decls.NewFunction("call", 
 			decls.NewOverload("call_string_any_string", []*exprpb.Type{decls.String, decls.Any}, decls.Any)),
 		decls.NewFunction("sendEvent", 
@@ -1716,6 +1781,9 @@ func init() {
 			decls.NewOverload("split_string", []*exprpb.Type{decls.String, decls.String}, decls.NewListType(decls.String))))
 
 	triggerFuncs = cel.Functions(
+		&functions.Overload{
+	        Operator: "filter",
+	        Binary: filterCEL} ,
 		&functions.Overload{
 	        Operator: "call",
 	        Binary: callCEL} ,

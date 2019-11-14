@@ -1,0 +1,11 @@
+eventTriggers:
+  - eventSource: default
+    input: event
+    body:
+      - out1: ' filter(event, "key == \"stringAttr\" ") '
+      - arrayInt: ' [ 1, 2, 3 ]  '
+      - out2: ' filter(arrayInt, " value == 1 ") '
+      - arrayString: ' [ "str1" , "str2" , "str3" ]  '
+      - out3: ' filter(arrayString, " value != \"str2\" ") '
+      - map1: ' { "attr1" : "val1", "attr2": { "subattr1": "subval1" } } '
+      - out4: ' filter(map1, " key != \"attr1\" ") '
