@@ -28,6 +28,7 @@ import (
 	"gopkg.in/yaml.v2"
 	"sync"
 	"encoding/json"
+	"reflect"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
@@ -591,8 +592,8 @@ func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
 func initializeEmptyCELEnv() (cel.Env, error) {
 	/* initilize empty CEL environment with additional functions */
 	additionalFuncs := getAdditionalCELFuncDecls()
-	klog.Infof("Additional Func Decls: %v", additionalFuncs)
-	return cel.NewEnv(getAdditionalCELFuncDecls() )
+//	klog.Infof("Additional Func Decls: %v", additionalFuncs)
+	return cel.NewEnv(additionalFuncs )
 }
 
 /* Get initial CEL environment
@@ -1428,7 +1429,9 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
    Return interface{} : result
 */
 func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
-	klog.Infof("callCEL first param: %v, second param: %v", functionVal, param)
+	if klog.V(6) {
+		klog.Infof("callCEL first param: %v, second param: %v", functionVal, param)
+	}
 
 	if param.Value() == nil {
 		klog.Infof("callCEL param is nil")
@@ -1446,7 +1449,9 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 		klog.Infof("callCEL function is nil")
 		return types.ValOrErr(functionVal, "unexpected null first parameter passed to function call.") 
 	}
-	klog.Infof("callCEL first param type: %v, second param type: %v", functionVal.Type(), param.Type())
+	if klog.V(6) {
+		klog.Infof("callCEL first param type: %v, second param type: %v", functionVal.Type(), param.Type())
+	}
 
 	function, ok := functionVal.Value().(string)
 	if !ok {
@@ -1454,7 +1459,9 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 		return types.ValOrErr(functionVal, "unexpected type '%v' passed as first parameter to function call. It should be string", functionVal.Type())
 	}
 
-	klog.Infof("callCEL: getting functions:  %v ", triggerProc.triggerDef.functions)
+	if klog.V(6) {
+		klog.Infof("callCEL: getting functions:  %v ", triggerProc.triggerDef.functions)
+	}
 
 	functionDecl, ok := triggerProc.triggerDef.functions[function]
 	if !ok {
@@ -1547,8 +1554,12 @@ func convertToRefVal(outValueObj interface{}) (ref.Val, error) {
 		ret = types.NewDynamicMap(types.DefaultTypeAdapter,outValueObj)
 	case map[interface{}] interface{}:
 		ret = types.NewDynamicMap(types.DefaultTypeAdapter,outValueObj)
+	case map[ref.Val] ref.Val:
+		ret = types.NewDynamicMap(types.DefaultTypeAdapter,outValueObj)
 	case [] interface{}:
-		ret = types.NewDynamicList(types.DefaultTypeAdapter, ret)
+		ret = types.NewDynamicList(types.DefaultTypeAdapter, outValueObj)
+	case [] ref.Val:
+		ret = types.NewDynamicList(types.DefaultTypeAdapter, outValueObj)
 	default:
 		ret = nil
 		err = fmt.Errorf("Unable to convert %v of type %T to rev.Val",  outValueObj, outValueObj)
@@ -1716,31 +1727,139 @@ func filterCEL(message ref.Val, expression ref.Val) ref.Val {
 		klog.Infof("filterCEL expression is nil")
 		return types.ValOrErr(expression, "unexpected null expression parameter passed to function filter.") 
 	}
-	klog.Infof("filterCEL first param type: %v, %T, second param type: %v, %T",  message.Type(), messageVal, expression.Type(), expressionVal)
+	if klog.V(6) {
+		klog.Infof("filterCEL first param type: %v, %T, second param type: %v, %T",  message.Type(), messageVal, expression.Type(), expressionVal)
+	}
 
-	_, ok := expressionVal.(string)
+	expressionStr, ok := expressionVal.(string)
 	if !ok {
 		klog.Infof("filter expression %v is not string", expressionVal)
 		return types.ValOrErr(expression, "unexpected type '%v' passed as destination parameter to function filter. It should be string", expression.Type())
 	}
-	ret, _ := convertToRefVal("test")
-	return ret
 	
+	var err error
+	messageValue := reflect.ValueOf(messageVal)
+	messageType := messageValue.Type()
+	messageKind := messageType.Kind()
+	if messageKind != reflect.Map && messageKind != reflect.Array && messageKind != reflect.Slice {
+		klog.Errorf("filterCEL value is neither map nor array, but : %v", messageKind)
+		return types.ValOrErr(message, "for function filter, parameter message is neither a map nor an array, but %v", messageKind) 
+	}
+	var retValue interface{}
+	if messageKind == reflect.Map {
+		retMap := reflect.MakeMap(messageType)
+		for iter := messageValue.MapRange(); iter.Next(); {
+			key := iter.Key()
+			value := iter.Value()
+			err = filterMapEntry(retMap, key, value , expressionStr ) 
+			if err != nil {
+				klog.Errorf("In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err) 
+				return types.ValOrErr(message, "In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err) 
+			}
+		}
+		retValue = retMap.Interface()
+	} else {
+		/* array or array slice */
+		retArray := reflect.MakeSlice(reflect.SliceOf(messageType.Elem()), 0, 0)
+		for i := 0; i < messageValue.Len(); i++ {
+			value := messageValue.Index(i)
+			retArray, err = filterArraySlice(retArray, value , expressionStr ) 
+			if err != nil {
+				klog.Errorf("In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err) 
+				return types.ValOrErr(message, "In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err) 
+			}
+		}
+		retValue = retArray.Interface()
+	}
+	ret, err := convertToRefVal(retValue)
+	if err != nil {
+		klog.Errorf("In built-in function filter, error converting return value of type %T value %v to CEL type. Error: %v", retValue, retValue, err)
+		return types.ValOrErr(message, "In built-in function filter,  error converting return value of type %T, value %v to CEL type. Error: %v", retValue, retValue, err)
+	}
+	return ret
+}
+	
+/* Add key/value into a map if the expression evaluates to true.
+  map: map to insert the key/value
+  key: key of the entry
+  value: value of the entry
+  expression: expression to evaluate
 
-/*
-	variables := make(map[string]interface{})
+  This function first creates 2 variables:
+	key: value of the key
+	value: value of the "value" variable
+ Then then evaluates the expression in the context of the key/value variables.
+ If the expression is true, it inserts the ke/value into the map
+*/
+func filterMapEntry(mapVal reflect.Value, key, value reflect.Value, expression string ) error {
 	env, err := initializeEmptyCELEnv() 
 	if err != nil {
-		klog.Infof("filterCEL function %v Unable to initialize CEL environment", function)
-		return types.ValOrErr(filterCEL, "callCEL Unable to initialize CEL environment. Error: %v ", err)
+		return err
 	}
 
-	env, err = createOneVariable(env,  "", param , variables)
+	variables := make(map[string]interface{})
+	keyName := "key"
+	variables[keyName] = key.Interface()
+	ident := decls.NewIdent(keyName, decls.String, nil)
+	env, err = env.Extend(cel.Declarations(ident))
 	if err != nil {
-		klog.Infof("callCEL function %v unable to create input variable %v for %v", function, input, param)
-		return types.ValOrErr(param, "callCEL Unable to initialize CEL environment. Error: %v ", err)
+		return  err
 	}
+
+	valueName := "value"
+	variables[valueName] = value.Interface()
+	ident = decls.NewIdent(valueName, decls.Any, nil)
+	env, err = env.Extend(cel.Declarations(ident))
+	if err != nil {
+		return err
+	}
+	condition, err := evalCondition(env, expression, variables) 
+	if err != nil {
+		return err
+	}
+
+	if condition {
+		mapVal.SetMapIndex(key, value)
+	}
+	return nil
+}
+
+var nilValue = reflect.ValueOf(nil)
+
+/* Add value into an array slice if the expression evaluates to true.
+  slice: array slice to append the value
+  value: value of the entry
+  expression: expression to evaluate
+
+  This function first creates 1 variables
+	value: value of the array entry
+ Then then evaluates the expression in the context of the value variables.
+ If the expression is true, it inserts the value into the slice
 */
+func filterArraySlice(slice reflect.Value, value reflect.Value, expression string ) (reflect.Value, error) {
+	env, err := initializeEmptyCELEnv() 
+	if err != nil {
+		return nilValue, err
+	}
+
+	variables := make(map[string]interface{})
+
+	valueName := "value"
+	variables[valueName] = value.Interface()
+	ident := decls.NewIdent(valueName, decls.Any, nil)
+	env, err = env.Extend(cel.Declarations(ident))
+	if err != nil {
+		return nilValue, err
+	}
+	condition, err := evalCondition(env, expression, variables) 
+	if err != nil {
+		return nilValue, err
+	}
+
+	if condition {
+		slice = reflect.Append(slice, value)
+	}
+	return slice, nil
 }
 
 /* Get declaration of additional overloaded CEL functions */

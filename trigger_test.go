@@ -653,7 +653,6 @@ func TestCall(t *testing.T) {
 		t.Fatal(err)
 	}
 
-
 	// Need to set global triggerProc variable
 	triggerProc = newTriggerProcessor()
 	err = triggerProc.initialize(TRIGGER7)
@@ -669,11 +668,27 @@ func TestCall(t *testing.T) {
 
 	/* compare nested with temp.result */
 	temp := variables[0]["temp"].(map[string]interface{})
-	final := temp["final"]
-	finalBool := final.(bool)
-	if !finalBool {
-		t.Fatal(fmt.Errorf("result between nested and temp.result do not match. Final variables: %v", variables))
+	err = checkFinal(temp)
+	if err != nil {
+		t.Fatal(err)
 	}
+}
+
+
+func checkFinal(variables map[string] interface{}) error {
+	finalObj, ok := variables["final"]
+	if !ok {
+		return fmt.Errorf("variable final not found. Variables: %v", variables)
+	}
+	finalBool, ok := finalObj.(bool)
+	if !ok {
+		return fmt.Errorf("variable final %v not type bool, but type %T.", finalObj, finalObj)
+	}
+
+	if !finalBool {
+		return fmt.Errorf("variable final not set to true. Variables: %v", variables)
+	}
+	return nil
 }
 
 func TestRecursiveCall(t *testing.T) {
@@ -683,7 +698,6 @@ func TestRecursiveCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 
 	// Need to set global triggerProc variable
 	triggerProc = newTriggerProcessor()
@@ -696,18 +710,23 @@ func TestRecursiveCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("Variables: %v", variables)
-
-}
-
-func TestFilter(t *testing.T) {
-	srcEvent := []byte(`{"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} } `)
-	var event map[string]interface{}
-	err := json.Unmarshal(srcEvent, &event)
+	err = checkFinal(variables[0])
 	if err != nil {
 		t.Fatal(err)
 	}
+}
 
+func TestFilter(t *testing.T) {
+	srcEvent := []byte( `{ "Connection": ["close"], "X-Forwarded-For": ["169.60.70.162"], "Content-Length": [23808], ` +
+	 ` "Content-Type": [ "application/json" ], "X-Github-Delivery" : [ "14571b40-f72e-11e9-9252-a0ce3bc96ef7" ],` +
+	 ` "X-Github-Event" : [ "pull_request" ], "X-Github-Enterprise-host" : [ "github.ibm.com" ],`+
+	 ` "X-Github-Enterprise-version" : ["2.16.16" ], "User-Agent" : [ "GitHub-Hookshot/632ecda" ],` +
+	 ` "Accept": [ "*/*" ], "Host" : [ "webhook.site" ]} `)
+	var event map[string]interface{}
+	err := json.Unmarshal(srcEvent, &event)
+	if err != nil {
+		t.Fatalf("Unable to parse srrc: %v", err)
+	}
 
 	// Need to set global triggerProc variable
 	triggerProc = newTriggerProcessor()
@@ -720,6 +739,9 @@ func TestFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("Variables: %v", variables)
 
+	err = checkFinal(variables[0])
+	if err != nil {
+		t.Fatal(err)
+	}
 }
