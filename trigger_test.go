@@ -682,7 +682,7 @@ func checkFinal(variables map[string] interface{}) error {
 	}
 	finalBool, ok := finalObj.(bool)
 	if !ok {
-		return fmt.Errorf("variable final %v not type bool, but type %T.", finalObj, finalObj)
+		return fmt.Errorf("variable final %v not type bool, but type %T", finalObj, finalObj)
 	}
 
 	if !finalBool {
