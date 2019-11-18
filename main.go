@@ -59,6 +59,8 @@ var (
 	dynamicClient        dynamic.Interface
 	webhookNamespace     string
 	triggerProc          *triggerProcessor
+	eventProviders       *EventDefinition
+	providerCfg          string                      // Path of provider config to use
 	disableTLS           bool                        // Option to disable TLS listener
 	skipChkSumVerify     bool                        // Option to skip verification of SHA256 checksum of trigger collection
 )
@@ -148,6 +150,21 @@ func main() {
 	err = triggerProc.initialize(dir)
 	if err != nil {
 		klog.Fatal(fmt.Errorf("unable to initialize trigger definition: %s", err))
+	}
+
+	if providerCfg == "" {
+		providerCfg = filepath.Join(dir, "eventDefinitions.yaml")
+	}
+
+	if _, err := os.Stat(providerCfg); os.IsNotExist(err) {
+		// Tolerate this for now.
+		klog.Errorf("eventDefinitions.yaml was not found: %s", providerCfg)
+	}
+
+	eventProviders, err = initializeEventProviders(providerCfg)
+
+	if err != nil {
+		klog.Fatal(fmt.Errorf("unable to initialize event providers: %s", err))
 	}
 
 	// gvr := schema.GroupVersionResource { Group: "app.k8s.io", Version: "v1beta1", Resource: "applications" }
@@ -270,6 +287,7 @@ func init() {
 		flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
 	}
 	flag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
+	flag.StringVar(&providerCfg, "providercfg", "", "path to the provider config")
 	flag.BoolVar(&disableTLS, "disableTLS", false, "set to use non-TLS listener")
 	flag.BoolVar(&skipChkSumVerify, "skipChecksumVerify", false, "set to skip the verification of trigger collection checksum")
 

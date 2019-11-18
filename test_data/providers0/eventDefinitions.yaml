@@ -1,0 +1,24 @@
+messageProviders:
+- name: nats-provider
+  providerType: nats
+  url: nats://127.0.0.1:4222
+  timeout: 5
+# REST provider is a fake message provider that allows users to send events to a HTTPS sink
+# Note that you cannot receive events from a REST provider
+- name: rest-provider
+  providerType: rest
+  url: https://webhook.site/35317dfd-98d8-47a3-8ac1-d7d8d7544be1
+eventSources:
+- name: nats-source
+  providerRef: nats-provider
+  topic: demo
+eventDestinations:
+- name: nats-dest-1
+  providerRef: nats-provider
+  topic: demo
+- name: nats-dest-2
+  providerRef: nats-provider
+  topic: demo
+- name: rest-dest
+  providerRef: rest-provider
+  topic: demo

@@ -1662,7 +1662,7 @@ func applyResourcesHelper(triggerDirectory string, directory string, variables i
 
 
 /* implementation of sendEvent
-   eventDestination string: where to send the event
+   destination string: where to send the event
    message Any: JSON message
    Return string : empty if OK, otherwise, error message
 */
@@ -1682,7 +1682,7 @@ func sendEventCEL(destination ref.Val, message ref.Val) ref.Val {
 	}
 	klog.Infof("sendEventCEL first param type: %v, second param type: %v", destination.Type(), message.Type())
 
-	_, ok := destination.Value().(string)
+	dest, ok := destination.Value().(string)
 	if !ok {
 		klog.Infof("sendEvent destination is not string")
 		return types.ValOrErr(destination, "unexpected type '%v' passed as destination parameter to function sendEventCEL. It should be string", destination.Type())
@@ -1690,13 +1690,30 @@ func sendEventCEL(destination ref.Val, message ref.Val) ref.Val {
 
 	var ret ref.Val
 	value := message.Value()
-    bytes, err := json.Marshal(value)
+	bytes, err := json.Marshal(value)
 	if err != nil {
 		klog.Errorf("Unable to marshall as JSON: %v, type %T", value, value)
 		ret = types.String(fmt.Sprintf("sendEventCEL error applying sending message: %v", err) )
 	} else {
-		klog.Infof("in sendEvent message %v marshalled as: %s", value, string(bytes))
+		klog.Infof("in sendEvent message %v marshaled as: %s", value, string(bytes))
 		ret = types.String("")
+	}
+
+	destNode := eventProviders.GetEventDestination(dest)
+	if destNode == nil {
+		klog.Errorf("Unable to find an eventDestination with the name '%s'. Verify that it has been defined.", dest)
+	}
+	provider := eventProviders.GetMessageProvider(destNode.ProviderRef)
+	if provider == nil {
+		klog.Errorf("Unable to find a messageProvider with the name '%s'. Verify that is has been defined.", destNode.ProviderRef)
+	}
+
+	err = provider.Send(destNode, bytes)
+	if err != nil {
+		klog.Error(err)
+	}
+	if klog.V(6) {
+		klog.Infof("sendEvent successfully sent message to destination '%s'", dest)
 	}
 	return ret
 }
