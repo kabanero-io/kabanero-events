@@ -40,7 +40,7 @@ func (provider *natsProvider) Subscribe(node *EventNode) error {
 }
 
 // Send an event to some eventSource.
-func (provider *natsProvider) Send(node *EventNode, payload []byte) error {
+func (provider *natsProvider) Send(node *EventNode, payload []byte, header interface{}) error {
 	klog.Infof("natsProvider: Sending %s", string(payload))
 	conn := provider.connection
 	if err := conn.Publish(node.Topic, payload); err != nil {

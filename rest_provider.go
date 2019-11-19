@@ -27,7 +27,7 @@ func (provider *restProvider) ListenAndServe(node *EventNode, receiver ReceiverF
 }
 
 // Send a message to an eventDestination.
-func (provider *restProvider) Send(node *EventNode, payload []byte) error {
+func (provider *restProvider) Send(node *EventNode, payload []byte, header interface{}) error {
 	if klog.V(6) {
 		klog.Infof("restProvider: Sending %s", string(payload))
 	}
