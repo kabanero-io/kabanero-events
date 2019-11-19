@@ -1664,9 +1664,29 @@ func applyResourcesHelper(triggerDirectory string, directory string, variables i
 /* implementation of sendEvent
    destination string: where to send the event
    message Any: JSON message
+   context Any: optional context for the event, such as header
    Return string : empty if OK, otherwise, error message
 */
-func sendEventCEL(destination ref.Val, message ref.Val) ref.Val {
+// func sendEventCEL(destination ref.Val, message ref.Val, context ref.Val) ref.Val 
+func sendEventCEL(refs ... ref.Val) ref.Val {
+	if refs == nil {
+		klog.Error("sendEventCEL input is nil")
+		return types.ValOrErr(nil, "unexpected nil input to sendEventCEL.") 
+	}
+
+	numParams := len(refs)
+	if numParams > 3  {
+		klog.Errorf("sendEventCEL: too many parameters: %v", numParams)
+		return types.ValOrErr(nil, "sendEventCEL: too many parameters: %v", numParams) 
+	}
+	if numParams < 2  {
+		klog.Errorf("sendEventCEL: too few parameters: %v", numParams)
+		return types.ValOrErr(nil, "sendEventCEL: too few parameters: %v", numParams) 
+	}
+
+	destination := refs[0]
+	message := refs[1]
+
 	if klog.V(6) {
 		klog.Infof("sendEventCEL first param: %v, second param: %v", destination, message)
 	}
@@ -1699,6 +1719,7 @@ func sendEventCEL(destination ref.Val, message ref.Val) ref.Val {
 		ret = types.String("")
 	}
 
+
 	destNode := eventProviders.GetEventDestination(dest)
 	if destNode == nil {
 		klog.Errorf("Unable to find an eventDestination with the name '%s'. Verify that it has been defined.", dest)
@@ -1708,7 +1729,11 @@ func sendEventCEL(destination ref.Val, message ref.Val) ref.Val {
 		klog.Errorf("Unable to find a messageProvider with the name '%s'. Verify that is has been defined.", destNode.ProviderRef)
 	}
 
-	err = provider.Send(destNode, bytes)
+	var header interface{} = nil
+	if numParams == 3 {
+		header = refs[2].Value()
+	}
+	err = provider.Send(destNode, bytes, header)
 	if err != nil {
 		klog.Error(err)
 	}
@@ -1925,7 +1950,7 @@ func init() {
 	        Binary: callCEL} ,
 		&functions.Overload{
 	        Operator: "sendEvent",
-	        Binary: sendEventCEL} ,
+	        Function: sendEventCEL} ,
 		&functions.Overload{
 	        Operator: "applyResources",
 	        Binary: applyResourcesCEL} ,

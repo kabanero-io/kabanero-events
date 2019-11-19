@@ -12,8 +12,10 @@ type ReceiverFunc func ([]byte)
 
 // MessageProvider must be implemented for whichever messaging provider to be supported.
 type MessageProvider interface {
-	// Send a new message to an eventDestination.
-	Send(*EventNode, []byte) error
+	// Send a new message to an eventDestination. 
+	// The first parameter is message body. The second parameter is optional header or context
+	Send(*EventNode, []byte, interface{}) error
+
 	// Subscribe to events from an eventSource.
 	Subscribe(*EventNode) error
 	// Receive a message from an eventSource. The timeout can be configured by setting the timeout (in seconds) on the messageProvider.

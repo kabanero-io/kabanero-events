@@ -75,7 +75,7 @@ func TestProviderListenAndSend(t *testing.T) {
 		}
 		wg.Add(1)
 		go func() {
-			provider.Send(node, []byte(msg))
+			provider.Send(node, []byte(msg), nil)
 			wg.Done()
 		}()
 	}
@@ -131,7 +131,7 @@ func TestProviderSendAndReceive(t *testing.T) {
 		}
 		wg.Add(1)
 		go func() {
-			provider.Send(node, []byte(msg))
+			provider.Send(node, []byte(msg), nil)
 			wg.Done()
 		}()
 	}
