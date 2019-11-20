@@ -8,10 +8,6 @@ messageProviders:
 - name: rest-provider
   providerType: rest
   url: https://webhook.site/35317dfd-98d8-47a3-8ac1-d7d8d7544be1
-eventSources:
-- name: nats-source
-  providerRef: nats-provider
-  topic: demo
 eventDestinations:
 - name: nats-dest-1
   providerRef: nats-provider

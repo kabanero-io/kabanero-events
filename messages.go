@@ -27,7 +27,6 @@ type MessageProvider interface {
 // EventDefinition contains providers, event sources, and event destinations.
 type EventDefinition struct {
 	MessageProviders      []*MessageProviderDefinition     `yaml:"messageProviders,omitempty"`
-	EventSources          []*EventNode                     `yaml:"eventSources,omitempty"`
 	EventDestinations     []*EventNode                     `yaml:"eventDestinations,omitempty"`
 }
 
@@ -36,7 +35,8 @@ type MessageProviderDefinition struct {
 	Name                  string                           `yaml:"name"`
 	ProviderType          string                           `yaml:"providerType"`
 	URL                   string                           `yaml:"url"`
-	Timeout               time.Duration                    `yaml:"timeout"`
+	Timeout               time.Duration						`yaml:"timeout"`
+	SkipTLSVerify         bool                             `yaml:"skipTLSVerify",omitempty`
 }
 
 // EventNode represents either an event source or destination and consists of a provider reference and the topic to

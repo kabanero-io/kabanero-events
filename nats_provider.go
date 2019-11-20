@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/nats-io/nats.go"
 	"k8s.io/klog"
-	"time"
+	// "time"
 )
 
 type natsProvider struct {
@@ -57,15 +57,19 @@ func (provider *natsProvider) Send(node *EventNode, payload []byte, header inter
 
 // Receive an event from some eventDestination.
 func (provider *natsProvider) Receive(node *EventNode) ([]byte, error) {
-	sub := provider.subscription[node.Name]
+	sub, ok := provider.subscription[node.Name]
 
-	if sub == nil {
+	if !ok {
 		klog.Errorf("no subscription for eventSource '%s'. It should be defined and Subscribed to.", node.Name)
 	}
 	if klog.V(6) {
 		klog.Infof("natsProvider: Looking for data from source %s and provider %s", node.Name, node.ProviderRef)
 	}
-	timeout := provider.messageProviderDefinition.Timeout * time.Second
+	// timeout := provider.messageProviderDefinition.Timeout * time.Second
+	timeout := provider.messageProviderDefinition.Timeout
+	if klog.V(6) {
+		klog.Infof("natsPovider.Receive timeout: %v", timeout)
+	}
 	msg, err := sub.NextMsg(timeout)
 
 	if err != nil {

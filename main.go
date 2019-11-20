@@ -47,6 +47,7 @@ const (
 	DEFAULTNAMESPACE = "kabanero"
 	KUBENAMESPACE    = "KUBE_NAMESPACE"
 	KABANEROINDEXURL = "KABANERO_INDEX_URL" // use the given URL to fetch kabaneroindex.yaml
+	WEBHOOKDESTINATION = "github" // name of the destination to send github webhook events
 )
 
 var (
@@ -165,6 +166,12 @@ func main() {
 
 	if err != nil {
 		klog.Fatal(fmt.Errorf("unable to initialize event providers: %s", err))
+	}
+
+	/* Start listeners to listen on events */
+	err = triggerProc.startListeners(eventProviders)
+	if err != nil {
+		klog.Fatal(fmt.Errorf("unable to start listeners for event triggers: %s", err))
 	}
 
 	// gvr := schema.GroupVersionResource { Group: "app.k8s.io", Version: "v1beta1", Resource: "applications" }
