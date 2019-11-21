@@ -1,5 +1,5 @@
 # kabanero-webhook
-[![Build Status](https://travis-ci.org/kabanero-io/kabanero-webhook.svg?branch=master)](https://travis-ci.org/kabanero-io/kabanero-webhook)
+[![Build Status](https://travis-ci.org/kabanero-io/kabanero-events.svg?branch=master)](https://travis-ci.org/kabanero-io/kabanero-events)
 
 ## Table of Contents
 * [Introduction](#Introduction)   
