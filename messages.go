@@ -35,8 +35,8 @@ type MessageProviderDefinition struct {
 	Name                  string                           `yaml:"name"`
 	ProviderType          string                           `yaml:"providerType"`
 	URL                   string                           `yaml:"url"`
-	Timeout               time.Duration						`yaml:"timeout"`
-	SkipTLSVerify         bool                             `yaml:"skipTLSVerify",omitempty`
+	Timeout               time.Duration                    `yaml:"timeout"`
+	SkipTLSVerify         bool                             `yaml:"skipTLSVerify,omitempty"`
 }
 
 // EventNode represents either an event source or destination and consists of a provider reference and the topic to
