@@ -1,4 +1,4 @@
-# kabanero-webhook
+# kabanero-events
 [![Build Status](https://travis-ci.org/kabanero-io/kabanero-events.svg?branch=master)](https://travis-ci.org/kabanero-io/kabanero-events)
 
 ## Table of Contents
@@ -25,7 +25,7 @@ There are two ways to build the code:
 To build in a docker container:
 - Clone this repository
 - Install version of docker that supports multi-stage build.
-- Run `./build.sh` to produces an image called `kabanero-webhook`.  This image is to be run in an openshift environment. An official build pushes the image as kabanero/kabanero-webhook and it is installed as part of Kabanero operator.
+- Run `./build.sh` to produces an image called `kabanero-events`.  This image is to be run in an openshift environment. An official build pushes the image as kabanero/kabanero-events and it is installed as part of Kabanero operator.
 
 ### Local build
 
@@ -34,7 +34,7 @@ To set up a local build environment:
 - Install `go`
 - Install `dep` tool
 - Install `golint` tool
-- Clone this repository into $GOPATH/src/github.com/kabanero-webhook
+- Clone this repository into $GOPATH/src/github.com/kabanero-events
 - Run `dep ensure --vendor-only` to generate the prerequisite vendor files.
 
 #### Local development and unit test
@@ -43,7 +43,7 @@ To set up a local build environment:
 
 Run `go test` to run unit test
 
-Run `go build` to build the executable `kabanero-webhook`. 
+Run `go build` to build the executable `kabanero-events`.
 
 If you import new prerequisites in your source code:
 - run `dep ensure` to regenerate the vendor directory, and `Gopkg.lock`, `Gopkg.toml`.  
@@ -56,7 +56,7 @@ If you import new prerequisites in your source code:
 To test locally outside of of a pod with existing event triggers in a collection:
 - Install and configure Kabanero foundation: `https://kabanero.io/docs/ref/general/installing-kabanero-foundation.html`. Also go through the optional section to make sure you can trigger a Tekton pipeline .
 - Ensure you have kubectl configured and you are able to connect to an Openshift API Server.
-- `kabanero-webhook -master <path to openshift API server> -v <n>`,  where the -v option is the client-go logging verbosity. 
+- `kabanero-events -master <path to openshift API server> -v <n>`,  where the -v option is the client-go logging verbosity.
 - To test webhook, create a new webhook to point to your local machine's host and port. For example, `https://my-host:9080/webhook`
 
 ##### Testing with Event Triggers in a sandbox
@@ -72,7 +72,7 @@ To set up your sandbox:
 ```
 triggers:
  - description: triggers for this collection
-   url: https://raw.githubusercontent.com/<owner>/kabanero-webhook/<barnch>/master/sample1/sample1.tar.gz
+   url: https://raw.githubusercontent.com/<owner>/kabanero-events/<barnch>/master/sample1/sample1.tar.gz
 ```
 
 To set up the kabanero webhook to use the sandbox:
@@ -80,17 +80,17 @@ To set up the kabanero webhook to use the sandbox:
 - Click on `raw` button and copy the URL in the browser. 
 - Export a new environment variable: `export KABANERO_INDEX_URL=<url>`. For example, `export KABANERO_INDEX_URL=https://raw.githubusercontent.com/<owner>/<repo>/master/sample1/kabanero-index.yaml`
 
-To run the kabanero-webhook in a sandbox:
+To run the kabanero-events in a sandbox:
 - Ensure the non-sandbox version is working.
 - Ensure you can run `kubectl` against your Kubernetes API server.
-- Run `kabanero-webhook -disableTLS -master <API server URL> -v <n>`, where n is the Kubernetes log level.
+- Run `kabanero-events -disableTLS -master <API server URL> -v <n>`, where n is the Kubernetes log level.
 - create a new webhook that points to the URL of your sandbox build.
 
 To update your sandbox event triggers:
 - Make changes to the files under the  sandbox `triggers` subdirectory
 - Re-create `sample1.tar.gz`
 - Push the changes
-- Restart kabanero-webhook 
+- Restart kabanero-events
 
 
 #### Running in OpenShift
@@ -175,7 +175,7 @@ status:
     version: v0.5.2
   webhook:
     hostnames:
-    - kabanero-webhook-kabanero.myhost.com
+    - kabanero-events-kabanero.myhost.com
     ready: "True"
 ```
 
@@ -183,7 +183,7 @@ Note that:
 - The webhook listener may be disabled via the CRD.
 - If enabled, the status shows the host(s) where the listener is available. 
 
-You can get more information about the route via `oc get route kabanero-webhook -o yaml`.
+You can get more information about the route via `oc get route kabanero-events -o yaml`.
 
 The webhook component expects to receive POST requests in JSON format, and creates a new event that contains:
 ```
@@ -198,7 +198,7 @@ Github webhooks may be configured at either a per-repository level, or at an org
 To configure an organizational webhook, follow these instructions: https://help.github.com/en/github/setting-up-and-managing-your-enterprise-account/configuring-webhooks-for-organization-events-in-your-enterprise-account
 
 Note these configurations:
-- Use the hostname of the exported route for kabanero-webhook as the hostname for the URL of the webhook. For example, `https://kabaner-webhook-kabanero.myhost.com`
+- Use the hostname of the exported route for kabanero-events as the hostname for the URL of the webhook. For example, `https://kabaner-webhook-kabanero.myhost.com`
 - Use "aplication/JSON" as the content type.
 - The Kabanero webhook listener does not currently verify the secret you configure in Github.
 - The default configuration uses Openshift auto-generated service serving self-signed certificate. Unless you had replaced the route with a certificate signed by a public certificate authority, when configuring webhook you need to choose the `disable SSL` option to skip certificate verification.
@@ -381,7 +381,7 @@ and then appending `ssh-key` to the `secrets` section like so:
 Create an organization on Github.
 
 Configure an organizational webhook following the instruction here: https://help.github.com/en/github/setting-up-and-managing-your-enterprise-account/configuring-webhooks-for-organization-events-in-your-enterprise-account.
-- For `payload URl`, enter the route to your webhook, such as `kabanero-webhook-kabaner.<host>.com`. The actual URL is installation dependent.
+- For `payload URl`, enter the route to your webhook, such as `kabanero-events-kabaner.<host>.com`. The actual URL is installation dependent.
 - For `Content type` select `application/json`
 - For `Secret`, leave blank for now, as the current implementation does not yet support checking secrets.
 - For the list of events, select `send me everything`.

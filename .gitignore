@@ -3,7 +3,7 @@
 # vendor directory
 vendor/
 # executable
-kabanero-webhook
+kabanero-events
 
 ### Intellij ###
 .idea

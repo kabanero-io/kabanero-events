@@ -16,7 +16,7 @@
 # Stage 1: build using golang image
 FROM golang as builder
 
-WORKDIR $GOPATH/src/github.com/kabanero-webhook
+WORKDIR $GOPATH/src/github.com/kabanero-io/kabanero-events
 
 # install dep tool
 RUN curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
@@ -43,12 +43,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"'
 # Stage 2: Build official image based on UBI
 FROM registry.access.redhat.com/ubi7-minimal:7.6-123
 
-LABEL name="Kabanero Webhook" \
+LABEL name="Kabanero Events" \
       version="0.1.0" \
       release="0.1.0" \
       vendor="kabanero" \
-      summary="Kabanero Webhook" \
-      description="Image for Kabanero webhook processing"
+      summary="Kabanero Events" \
+      description="Image for Kabanero event processing"
 
 RUN microdnf -y install shadow-utils \
     && microdnf clean all \
@@ -60,7 +60,7 @@ RUN microdnf -y install shadow-utils \
     && chown 1001:0 /app \
     && chmod g+rwx /app
 
-COPY --from=builder --chown=1001:0 /go/src/github.com/kabanero-webhook/kabanero-webhook /app
+COPY --from=builder --chown=1001:0 /go/src/github.com/kabanero-io/kabanero-events/kabanero-events /app
 COPY --chown=1001:0 licenses/ /licenses/
 # COPY --chown=1001:0 testcntlr.sh /bin/testcntlr.sh
 USER 1001
@@ -68,5 +68,5 @@ WORKDIR /app
 EXPOSE 9443
 
 # run with log level 2
-# Note liveness/readiness probe depends on './webhook'
-CMD ./kabanero-webhook -v 5
+# Note liveness/readiness probe depends on './events'
+CMD ./kabanero-events -v 5
