@@ -259,18 +259,18 @@ func messageListener(provider MessageProvider, node *EventNode ) {
 
 func (tp *triggerProcessor) startListeners(providers *EventDefinition) error {
 	triggers := tp.triggerDef.eventTriggers
-	for dest, _ := range triggers {
+	for dest := range triggers {
 		destNode := eventProviders.GetEventDestination(dest)
 		if destNode == nil {
-			return fmt.Errorf("Unable to find an eventDestination with the name '%s' in trigger definitions. Verify that it has been defined.", dest)
+			return fmt.Errorf("unable to find an eventDestination with the name '%s' in trigger definitions. Verify that it has been defined", dest)
 		}
 		provider := eventProviders.GetMessageProvider(destNode.ProviderRef)
 		if provider == nil {
-			return fmt.Errorf("Unable to find a messageProvider with the name '%s'. Verify that is has been defined.", destNode.ProviderRef)
+			return fmt.Errorf("unable to find a messageProvider with the name '%s'. Verify that is has been defined", destNode.ProviderRef)
 		}
 		err := provider.Subscribe(destNode)
 		if err != nil {
-			return fmt.Errorf("Unable to subscribe to provider %v", destNode.ProviderRef)
+			return fmt.Errorf("unable to subscribe to provider %v", destNode.ProviderRef)
 		}
 		go messageListener(provider, destNode)
 	}
