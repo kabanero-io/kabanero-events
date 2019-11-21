@@ -231,6 +231,53 @@ func (tp *triggerProcessor) initialize(dir string) error {
 	return nil
 }
 
+func messageListener(provider MessageProvider, node *EventNode ) {
+	klog.Infof("Starting listener event destination %v", node.Name)
+	for {
+		bytes, err := provider.Receive(node)
+		if err != nil {
+			klog.Errorf("Message listener exiting. Unable to receive message. Error: %v, type %T", err, err)
+			break
+		}
+		if klog.V(6) {
+			klog.Infof("messageListener for %v received messages %v", node.Name, string(bytes))
+		}
+		var messageMap map[string]interface{}
+		err = json.Unmarshal(bytes, &messageMap)
+		if err != nil {
+			klog.Errorf("Unable to unarmshal message from node %v", node.Name)
+			continue
+		}
+		_, err = triggerProc.processMessage(messageMap, node.Name)
+		if err != nil {
+			klog.Errorf("Error processing message from destination %v. Message: %v, Error: %v", node.Name, messageMap, err)
+		} else if klog.V(6) {
+			klog.Infof("Finished processing message for  %v", node.Name )
+		}
+	}
+}
+
+func (tp *triggerProcessor) startListeners(providers *EventDefinition) error {
+	triggers := tp.triggerDef.eventTriggers
+	for dest := range triggers {
+		destNode := eventProviders.GetEventDestination(dest)
+		if destNode == nil {
+			return fmt.Errorf("unable to find an eventDestination with the name '%s' in trigger definitions. Verify that it has been defined", dest)
+		}
+		provider := eventProviders.GetMessageProvider(destNode.ProviderRef)
+		if provider == nil {
+			return fmt.Errorf("unable to find a messageProvider with the name '%s'. Verify that is has been defined", destNode.ProviderRef)
+		}
+		err := provider.Subscribe(destNode)
+		if err != nil {
+			return fmt.Errorf("unable to subscribe to provider %v", destNode.ProviderRef)
+		}
+		go messageListener(provider, destNode)
+	}
+	return nil
+}
+
+
 /* Helper to fetch parameters of trigger object 
   input 
 	 tringger: the object containing trigger definition
@@ -816,12 +863,12 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 			klog.Infof("variable %s set to %v", entireName, listval)
 		}
 	case TYPEMAP:
-		_, ok := out.Value().(map[string]interface{})
-		if !ok {
-			_, ok := out.Value().( map[ref.Val]ref.Val)
-			if !ok {
-				return env, fmt.Errorf("Unable to cast variable %s, value %s, evaluaed value %v, type %T into map[ref.Val]ref.Val", entireName, val, out.Value(), out.Value())
-			}
+		outValue := out.Value()
+		valueVal := reflect.ValueOf(outValue)
+		valueValType := valueVal.Type()
+		valueValKind := valueValType.Kind()
+		if valueValKind != reflect.Map  {
+				return env, fmt.Errorf("Unable to cast variable %s, value %s, evaluaed value %v, type %T into map", entireName, val, outValue, outValue)
 		}
 		if createNewIdent {
 			ident := decls.NewIdent(name, decls.NewMapType(decls.String, decls.Any), nil)
@@ -830,7 +877,7 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 				return  env, err
 			}
 		}
-		variables[name] = out.Value()
+		variables[name] = outValue
 		if klog.V(4) {
 			klog.Infof("variable %s set to %v", entireName, out)
 		}
@@ -1392,9 +1439,9 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
 		return types.ValOrErr(webhookMessage, "Missing header parameter %v passed to downloadYAML.", webhookMessage)
 	}
 	var headerMap map[string][]string
-	headerMap, ok = headerMapObj.(map[string][]string)
-	if !ok {
-		return types.ValOrErr(webhookMessage, "Parameter %v passed to downloadYAML not map[string][]string. Instead, it is %T.", headerMapObj, headerMapObj)
+    headerMap, err := convertToHeaderMap(headerMapObj)
+	if err != nil  {
+		return types.ValOrErr(webhookMessage, "Header %v passed to downloadYAML can not be converted to map[string][]string. Instead, it is %T. Conversion error: %v", headerMapObj, headerMapObj, err)
 	}
 	
 	if fileNameVal.Value() == nil {
@@ -1537,6 +1584,16 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 /* Convert a value to ref.Val
 */
 func convertToRefVal(outValueObj interface{}) (ref.Val, error) {
+
+	outValueVal := reflect.ValueOf(outValueObj)
+	outValueType := outValueVal.Type()
+	outValueKind := outValueType.Kind()
+	if outValueKind == reflect.Map {
+		return  types.NewDynamicMap(types.DefaultTypeAdapter,outValueObj), nil
+	} else if outValueKind == reflect.Array || outValueKind ==  reflect.Slice {
+		return types.NewDynamicList(types.DefaultTypeAdapter, outValueObj), nil
+	}
+
 	var ret ref.Val // return value
 	var err error = nil
 	switch outValueObj.(type) {
@@ -1550,19 +1607,9 @@ func convertToRefVal(outValueObj interface{}) (ref.Val, error) {
 		ret = types.String(outValueObj.(string))
 	case ref.Val:
 		ret = outValueObj.(ref.Val)
-	case map[string] interface{}:
-		ret = types.NewDynamicMap(types.DefaultTypeAdapter,outValueObj)
-	case map[interface{}] interface{}:
-		ret = types.NewDynamicMap(types.DefaultTypeAdapter,outValueObj)
-	case map[ref.Val] ref.Val:
-		ret = types.NewDynamicMap(types.DefaultTypeAdapter,outValueObj)
-	case [] interface{}:
-		ret = types.NewDynamicList(types.DefaultTypeAdapter, outValueObj)
-	case [] ref.Val:
-		ret = types.NewDynamicList(types.DefaultTypeAdapter, outValueObj)
 	default:
 		ret = nil
-		err = fmt.Errorf("Unable to convert %v of type %T to rev.Val",  outValueObj, outValueObj)
+		err = fmt.Errorf("Unable to convert %v of type %T to ref.Val",  outValueObj, outValueObj)
 	}
 	return ret, err
 }
@@ -1660,6 +1707,50 @@ func applyResourcesHelper(triggerDirectory string, directory string, variables i
 	return nil
 }
 
+/* convert value to map[string][]string if possible. */
+func convertToHeaderMap(value interface{}) (map[string][]string, error) {
+	
+	if value == nil {
+		return make(map[string][]string), nil
+	}
+	ret, ok := value.(map[string][]string) 
+	if ok {
+		return ret, nil
+	}
+	ret = make(map[string][]string)
+	valValue := reflect.ValueOf(value)
+	valType := valValue.Type()
+	valKind := valValue.Kind()
+
+	if valKind != reflect.Map  {
+		return nil, fmt.Errorf("convertToHeaderMap value is not Map, but %v", valType)
+	}
+	for iter := valValue.MapRange(); iter.Next(); {
+		mapKey := iter.Key()
+		mapValue := reflect.ValueOf(iter.Value().Interface()) // peek into underlying value then reflect on it
+		mapKeyStr, ok := mapKey.Interface().(string)
+		if !ok {
+			return nil, fmt.Errorf("convertToHeaderMap key %v not a string", mapKey)
+		}
+
+		mapValueType := mapValue.Type()
+		mapValueKind := mapValueType.Kind()
+		if mapValueKind != reflect.Array && mapValueKind != reflect.Slice {
+			return nil, fmt.Errorf("convertToHeaderMap key %v, value %v not slice, but is of type %T,  reflection type: %v, kind: %v",mapKey, mapValue, mapValue, mapValueType, mapValueKind)
+		}
+		values := make([]string, 0)
+		for i := 0; i < mapValue.Len(); i++ {
+			element := mapValue.Index(i)
+			elementStr, ok := element.Interface().(string)
+			if !ok {
+				return nil, fmt.Errorf("convertToHeaderMap value of %v not array or slice of string: %v",mapKey, mapValue)
+			}
+			values = append(values, elementStr)
+		}
+		ret[mapKeyStr] = values	
+	}
+	return ret, nil
+}
 
 /* implementation of sendEvent
    destination string: where to send the event
@@ -1667,7 +1758,7 @@ func applyResourcesHelper(triggerDirectory string, directory string, variables i
    context Any: optional context for the event, such as header
    Return string : empty if OK, otherwise, error message
 */
-// func sendEventCEL(destination ref.Val, message ref.Val, context ref.Val) ref.Val 
+// func sendEventCEL(destination ref.Val, message ref.Val, context ref.Val) ref.Val  
 func sendEventCEL(refs ... ref.Val) ref.Val {
 	if refs == nil {
 		klog.Error("sendEventCEL input is nil")
@@ -1675,17 +1766,14 @@ func sendEventCEL(refs ... ref.Val) ref.Val {
 	}
 
 	numParams := len(refs)
-	if numParams > 3  {
-		klog.Errorf("sendEventCEL: too many parameters: %v", numParams)
-		return types.ValOrErr(nil, "sendEventCEL: too many parameters: %v", numParams) 
-	}
-	if numParams < 2  {
-		klog.Errorf("sendEventCEL: too few parameters: %v", numParams)
-		return types.ValOrErr(nil, "sendEventCEL: too few parameters: %v", numParams) 
+	if numParams != 3  {
+		klog.Errorf("sendEventCEL: expecting 3 parameters but got %v", numParams)
+		return types.ValOrErr(nil, "sendEventCEL: expecting 3 parameters but got : %v", numParams) 
 	}
 
 	destination := refs[0]
 	message := refs[1]
+	context := refs[2]
 
 	if klog.V(6) {
 		klog.Infof("sendEventCEL first param: %v, second param: %v", destination, message)
@@ -1713,33 +1801,36 @@ func sendEventCEL(refs ... ref.Val) ref.Val {
 	bytes, err := json.Marshal(value)
 	if err != nil {
 		klog.Errorf("Unable to marshall as JSON: %v, type %T", value, value)
-		ret = types.String(fmt.Sprintf("sendEventCEL error applying sending message: %v", err) )
-	} else {
-		klog.Infof("in sendEvent message %v marshaled as: %s", value, string(bytes))
-		ret = types.String("")
-	}
-
+		return types.ValOrErr(nil, "sendEventCEL error marshalling message to JSON: %v", err)
+	} 
 
 	destNode := eventProviders.GetEventDestination(dest)
 	if destNode == nil {
 		klog.Errorf("Unable to find an eventDestination with the name '%s'. Verify that it has been defined.", dest)
+		return  types.ValOrErr(nil, "sendEventCEL Unable to find event destinations %v", dest)
 	}
 	provider := eventProviders.GetMessageProvider(destNode.ProviderRef)
 	if provider == nil {
 		klog.Errorf("Unable to find a messageProvider with the name '%s'. Verify that is has been defined.", destNode.ProviderRef)
+		return  types.ValOrErr(nil, "sendEventCEL Unable to find message povider %v", destNode.ProviderRef)
 	}
 
 	var header interface{} = nil
 	if numParams == 3 {
-		header = refs[2].Value()
+		header, err = convertToHeaderMap(context.Value())
+		if err != nil {
+			return  types.ValOrErr(context, "sendEventCEL unabele to convert header to map[string][]stinrg: %v", context)
+		}
 	}
 	err = provider.Send(destNode, bytes, header)
 	if err != nil {
 		klog.Error(err)
+		return  types.ValOrErr(nil, "sendEventCEL error sending message: %v", err)
 	}
 	if klog.V(6) {
 		klog.Infof("sendEvent successfully sent message to destination '%s'", dest)
 	}
+	ret = types.String("")
 	return ret
 }
 
@@ -1925,7 +2016,7 @@ func init() {
 		decls.NewFunction("call", 
 			decls.NewOverload("call_string_any_string", []*exprpb.Type{decls.String, decls.Any}, decls.Any)),
 		decls.NewFunction("sendEvent", 
-			decls.NewOverload("applyResources_string_any", []*exprpb.Type{decls.String, decls.Any}, decls.String)),
+			decls.NewOverload("sendEvent_string_any_any", []*exprpb.Type{decls.String, decls.Any, decls.Any}, decls.String)),
 		decls.NewFunction("applyResources", 
 			decls.NewOverload("applyResources_string_any", []*exprpb.Type{decls.String, decls.Any}, decls.String)),
 		decls.NewFunction("kabaneroConfig", 

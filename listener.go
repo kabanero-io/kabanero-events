@@ -65,7 +65,28 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 	message[HEADER] = map[string][]string(header)
 	message[BODY] = bodyMap
 
-	_, err = triggerProc.processMessage(message, "github")
+	bytes, err = json.Marshal(message)
+	if err != nil {
+		klog.Errorf("Unable to marshall as JSON: %v, type %T", message, message)
+		return
+	}
+
+	destNode := eventProviders.GetEventDestination(WEBHOOKDESTINATION)
+	if destNode == nil {
+		klog.Errorf("Unable to find an eventDestination with the name '%s'. Verify that it has been defined.", WEBHOOKDESTINATION)
+		return
+	}
+	provider := eventProviders.GetMessageProvider(destNode.ProviderRef)
+	if provider == nil {
+		klog.Errorf("Unable to find a messageProvider with the name '%s'. Verify that is has been defined.", destNode.ProviderRef)
+		return
+	}
+
+	err = provider.Send(destNode, bytes, nil)
+	if err != nil {
+		klog.Errorf("Unable to send webhook message. Error: %v", err)
+		return
+	}
 	if err != nil {
 		klog.Errorf("Error processing webhook message: %v", err)
 	}
