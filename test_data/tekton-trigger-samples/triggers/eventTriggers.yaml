@@ -1,0 +1,59 @@
+settings:
+  dryrun: true
+eventTriggers:
+  - eventSource: github
+    input: message
+    body:
+#     Initialize
+      - build: 'call("preprocessGithubWebhook", message)'
+      - kabanero : 'kabaneroConfig()'
+ ###################################################################
+ #    CUSTOMIZE THESE
+ ###################################################################33
+ #    *** General Build Related ***
+      - build.passthroughDest: '"passthrough-webhook-site"' # event destination to route passthrough messages. comment out to disable
+      - build.pushDest: '"passthrough-tekton-push"' # event destination to route passthrough messages. comment out to disable
+      - build.prDest: '"passthrough-tekton-pull"' # event destination to route passthrough messages. comment out to disable
+      - build.tagDest: '"passthrough-tekton-tag"' # event destination to route passthrough messages. comment out to disable
+      - build.namespace : ' kabanero.namespace ' 
+      - build.timeout : ' "1h0m0s" '
+      - build.jobid : ' jobID() '
+      - build.nameSuffix: toDomainName( build.ownerLogin + "-" + build.repositoryName + "-" + build.event + "-" + build.jobid)
+      - build.defaultRegistry : ' "image-registry.openshift-image-registry.svc:5000" '
+      - build.serviceAccount : ' "kabanero-operator" '
+      - if: ' build.event == "push" '
+        body:
+          #### Push ####
+          - build.push.allowedBranches : ' [ "master" ] '
+          - build.push.toRegistry: ' build.defaultRegistry + "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.push.sha'
+      - if: '  build.event == "pr" '
+        body:
+          #### Pull Request ####
+          - build.pr.allowedBranches:  ' [ "master" ] '
+      - if: ' build.event == "tag" '
+        body:
+          #### Tag ####
+          - build.tag.pattern : '"\\d\\.\\d\\.\\d"' # only tags that follow this pattern are processed.
+          - build.tag.promoteToNamespace : ' build.repositoryName + "-test" '
+          - build.tag.fromRegistry : ' build.defaultRegistry+ "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.tag.sha '
+          - build.tag.toRegistry : 'build.defaultRegistry+ "/" + build.tag.promoteToNamespace + "/" +  build.repositoryName + ":" + build.tag.version '
+ ###################################################################
+ #    END CUSTOMIZATION 
+ ###################################################################33
+      # echo message
+      - if: ' has(build.passthroughDest) '
+        temp.send: 'sendEvent(build.passthroughDest, message.body, build.passthroughHeader) '
+
+      # process event
+      - if : 'has(build.collectionID) '
+        switch:
+          # Handle PUSH
+          - if : ' has(build.pushDest) && build.event == "push"  && build.push.branch in build.push.allowedBranches '
+            temp.sendPush: ' sendEvent(build.pushDest, message.body, build.passthroughHeader) '
+          # Handle PR
+          - if : ' has(build.prDest) && build.event == "pr" && build.pr.branch in build.pr.allowedBranches && (build.pr.action == "opened" || build.pr.action == "synchronize") '
+            temp.sendPR: ' sendEvent(build.prDest, message.body, build.passthroughHeader) '
+          # Handle TAG
+          - if : ' has(build.tagDest) && build.event == "tag" '
+            temp.sendTag: ' sendEvent(build.tagDest, message.body, build.passthroughHeader) '
+
