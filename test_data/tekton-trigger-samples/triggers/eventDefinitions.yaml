@@ -1,0 +1,35 @@
+messageProviders:
+- name: nats-provider
+  providerType: nats
+  url: nats://127.0.0.1:4222 # Your NATS URL
+  timeout: 8760h
+# REST provider is a fake message provider that allows users to send events to a HTTPS sink
+# Note that you cannot receive events from a REST provider
+- name: webhook-site-provider
+  providerType: rest
+  url: https://webhook.site # Your https://webhook.site URL
+- name: tekton-push-provider
+  providerType: rest
+  url: http://getting-started-push.YOUR-DOMAIN-REPLACEME
+- name: tekton-pull-provider
+  providerType: rest
+  url: http://getting-started-pull.YOUR-DOMAIN-REPLACEME
+- name: tekton-tag-provider
+  providerType: rest
+  url: http://getting-started-tag.YOUR-DOMAIN-REPLACEME
+eventDestinations:
+- name: github
+  providerRef: nats-provider
+  topic: github
+- name: passthrough-webhook-site
+  providerRef: webhook-site-provider
+  topic: demo
+- name: passthrough-tekton-push
+  providerRef: tekton-push-provider
+  topic: demo
+- name: passthrough-tekton-pull
+  providerRef: tekton-pull-provider
+  topic: demo
+- name: passthrough-tekton-tag
+  providerRef: tekton-tag-provider
+  topic: demo
