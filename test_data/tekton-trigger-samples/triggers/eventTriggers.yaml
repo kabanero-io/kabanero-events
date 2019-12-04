@@ -21,22 +21,33 @@ eventTriggers:
       - build.nameSuffix: toDomainName( build.ownerLogin + "-" + build.repositoryName + "-" + build.event + "-" + build.jobid)
       - build.defaultRegistry : ' "image-registry.openshift-image-registry.svc:5000" '
       - build.serviceAccount : ' "kabanero-operator" '
-      - if: ' build.event == "push" '
-        body:
-          #### Push ####
-          - build.push.allowedBranches : ' [ "master" ] '
-          - build.push.toRegistry: ' build.defaultRegistry + "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.push.sha'
-      - if: '  build.event == "pr" '
-        body:
-          #### Pull Request ####
-          - build.pr.allowedBranches:  ' [ "master" ] '
-      - if: ' build.event == "tag" '
-        body:
-          #### Tag ####
-          - build.tag.pattern : '"\\d\\.\\d\\.\\d"' # only tags that follow this pattern are processed.
-          - build.tag.promoteToNamespace : ' build.repositoryName + "-test" '
-          - build.tag.fromRegistry : ' build.defaultRegistry+ "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.tag.sha '
-          - build.tag.toRegistry : 'build.defaultRegistry+ "/" + build.tag.promoteToNamespace + "/" +  build.repositoryName + ":" + build.tag.version '
+
+      # Pipeline definitions. Is there a better way to do this?
+      - build.pr.pipeline: ' build.collectionID + "-build-pipeline" '
+      - build.push.pipeline: ' build.collectionID + "-build-push-pipeline" '
+      - build.tag.pipeline: ' build.collectionID + "-image-retag-push-pipeline" '
+
+      # Append Kabanero information to the event payload
+      - message.body.kabanero.collection: ' build.collectionID '
+
+      - switch:
+        - if: ' build.event == "push" '      ### Push Request ###
+          body:
+            - build.push.allowedBranches : ' [ "master" ] '
+            - build.push.toRegistry: ' build.defaultRegistry + "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.push.sha'
+            - message.body.kabanero.pipeline: ' build.push.pipeline '
+        - if: '  build.event == "pr" '      ### Pull Request ####
+          body:
+            - build.pr.allowedBranches:  ' [ "master" ] '
+            - message.body.kabanero.pipeline: ' build.pr.pipeline '
+        - if: ' build.event == "tag" '      ### Tag ###
+          body:
+            - build.tag.pattern : '"\\d\\.\\d\\.\\d"' # only tags that follow this pattern are processed.
+            - build.tag.promoteToNamespace : ' build.repositoryName + "-test" '
+            - build.tag.fromRegistry : ' build.defaultRegistry+ "/" + build.namespace +  "/" +  build.repositoryName + ":" + build.tag.sha '
+            - build.tag.toRegistry : 'build.defaultRegistry+ "/" + build.tag.promoteToNamespace + "/" +  build.repositoryName + ":" + build.tag.version '
+            - message.body.kabanero.pipeline: ' build.tag.pipeline '
+
  ###################################################################
  #    END CUSTOMIZATION 
  ###################################################################33

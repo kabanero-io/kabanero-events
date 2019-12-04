@@ -9,6 +9,8 @@ spec:
     description: The git repository's name
   - name: namespace
     description: The namespace to create the resources
+  - name: pipeline
+    description: The Tekton pipeline to run
   resourcetemplates:
   - apiVersion: tekton.dev/v1alpha1
     kind: PipelineResource
@@ -29,7 +31,7 @@ spec:
       type: image
       params:
       - name: url
-        value: image-registry.openshift-image-registry.svc:5000/$(params.repoName)-test-2/$(params.repoName)
+        value: image-registry.openshift-image-registry.svc:5000/$(params.repoName)-test/$(params.repoName)
   - apiVersion: tekton.dev/v1alpha1
     kind: PipelineResource
     metadata:
@@ -43,12 +45,12 @@ spec:
   - apiVersion: tekton.dev/v1alpha1
     kind: PipelineRun
     metadata:
-      name: java-microprofile-image-retag-push-pipeline-run-$(uid)
+      name: $(params.pipeline)-run-$(uid)
       namespace: $(params.namespace)
     spec:
       serviceAccount: kabanero-operator
       pipelineRef:
-        name: java-microprofile-image-retag-push-pipeline
+        name: $(params.pipeline)
       resources:
       - name: docker-src-image
         resourceRef:
@@ -68,6 +70,8 @@ spec:
     value: $(body.repository.name)
   - name: namespace
     value: kabanero
+  - name: pipeline
+    value: $(body.kabanero.pipeline)
 ---
 apiVersion: tekton.dev/v1alpha1
 kind: EventListener

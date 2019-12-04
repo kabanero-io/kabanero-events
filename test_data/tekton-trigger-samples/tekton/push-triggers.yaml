@@ -14,6 +14,8 @@ spec:
     description: The git repository url
   - name: namespace
     description: The namespace to create the resources
+  - name: pipeline
+    description: The Tekton pipeline to run
   resourcetemplates:
   - apiVersion: tekton.dev/v1alpha1
     kind: PipelineResource
@@ -50,12 +52,12 @@ spec:
   - apiVersion: tekton.dev/v1alpha1
     kind: PipelineRun
     metadata:
-      name: java-microprofile-build-push-pipeline-run-$(uid)
+      name: $(params.pipeline)-run-$(uid)
       namespace: $(params.namespace)
     spec:
       serviceAccount: kabanero-operator
       pipelineRef:
-        name: java-microprofile-build-push-pipeline
+        name: $(params.pipeline)
       resources:
       - name: git-source
         resourceRef:
@@ -79,6 +81,8 @@ spec:
     value: $(body.repository.url)
   - name: repoName
     value: $(body.repository.name)
+  - name: pipeline
+    value: $(body.kabanero.pipeline)
 ---
 apiVersion: tekton.dev/v1alpha1
 kind: EventListener
