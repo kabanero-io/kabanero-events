@@ -8,5 +8,5 @@ spec:
   - name: revision
     value: {{.push.sha}}
   - name: url
-    value: {{.repoURL}}
+    value: {{.clone_url}}
   type: git
