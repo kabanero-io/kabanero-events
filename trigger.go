@@ -187,6 +187,17 @@ func countKeywords(mymap map[interface{}]interface{}) (int, uint) {
 	return count, flag
 }
 
+func (td *eventTriggerDefinition) isDryRun() bool {
+	for _, setting := range td.setting {
+		if val := setting["dryrun"]; val != nil {
+			if b, ok := val.(bool); ok {
+				return b
+			}
+		}
+	}
+	return false
+}
+
 type eventTriggerDefinition struct {
   setting []map[interface{}]interface{} // all settings 
   eventTriggers map[string] []map[interface{}]interface{} // event source name to triggers 
@@ -323,7 +334,7 @@ func parseTrigger(trigger map[interface{}]interface{}) ( []string, string, []int
 
 func (tp *triggerProcessor) processMessage(message map[string]interface{}, eventSource string ) ([]map[string]interface{}, error) {
 	if klog.V(5) {
-		klog.Infof("Entering triggerProcessor.processMessage. message: %v, eventSource: %v", message, eventSource);
+		klog.Infof("Entering triggerProcessor.processMessage. message: %v, eventSource: %v", message, eventSource)
 		defer klog.Infof("Leaving triggerProcessor.processMessage")
 	}
 
@@ -332,7 +343,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 	}
 	triggerArray, ok := tp.triggerDef.eventTriggers[eventSource]
 	if !ok {
-		err := fmt.Errorf("No trigger found for event source %v", eventSource)
+		err := fmt.Errorf("no trigger found for event source %v", eventSource)
 		klog.Error(err)
 		return nil, err
 	}
@@ -341,7 +352,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 	}
 
 	savedVariables := make([]map[string]interface{}, 0)
-	for _, trigger := range(triggerArray) {
+	for _, trigger := range triggerArray {
 		/* evaluate all trigger definitions for the event source*/
 		eventSources, inputVariable, bodyArray, err := parseTrigger(trigger)
 		if err != nil {
@@ -349,7 +360,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 			return nil, err
 		}
 		if klog.V(5) {
-			klog.Infof("processMessage after parseTrigger: eventsources: %v", eventSources)
+			klog.Infof("processMessage after parseTrigger: eventSources: %v", eventSources)
 		}
 
 		env, variables, err := initializeCELEnv( message, inputVariable)
@@ -357,7 +368,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 			return nil, err
 		}
 		if klog.V(5) {
-			klog.Infof("processMessage after initializeCELEnv");
+			klog.Infof("processMessage after initializeCELEnv")
 		}
 
 
@@ -368,7 +379,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 			return nil, err
 		}
 		if klog.V(5) {
-			klog.Infof("processMessage after evalArrayObject");
+			klog.Infof("processMessage after evalArrayObject")
 		}
 		savedVariables = append(savedVariables, variables)
 	}
@@ -969,7 +980,7 @@ func readTriggerDefinition(fileName string, td *eventTriggerDefinition) error {
 	yamlMap := make(map[string]interface{})
 	err = yaml.Unmarshal(bytes, yamlMap)
 	if err != nil  {
-		return fmt.Errorf("Unable to marshal %v. Error: %v", fileName, err)
+		return fmt.Errorf("unable to marshal %v. Error: %v", fileName, err)
 	}
 
 	/* gather args in the yaml */
@@ -1639,7 +1650,7 @@ func applyResourcesCEL(dir ref.Val, variables ref.Val) ref.Val {
 		return types.ValOrErr(dir, "unexpected type '%v' passed as first parameter to function applyResources. It should be string", dir.Type())
 	}
 
-	err := applyResourcesHelper(triggerProc.triggerDir, dirStr, variables.Value(), true)
+	err := applyResourcesHelper(triggerProc.triggerDir, dirStr, variables.Value(), triggerProc.triggerDef.isDryRun())
 	var ret ref.Val
 	if err != nil {
 		ret = types.String(fmt.Sprintf("applyResources error  applying template %v", err) )
@@ -1796,7 +1807,6 @@ func sendEventCEL(refs ... ref.Val) ref.Val {
 		return types.ValOrErr(destination, "unexpected type '%v' passed as destination parameter to function sendEventCEL. It should be string", destination.Type())
 	}
 
-	var ret ref.Val
 	value := message.Value()
 	bytes, err := json.Marshal(value)
 	if err != nil {
@@ -1822,16 +1832,21 @@ func sendEventCEL(refs ... ref.Val) ref.Val {
 			return  types.ValOrErr(context, "sendEventCEL unabele to convert header to map[string][]stinrg: %v", context)
 		}
 	}
+
+	if triggerProc.triggerDef.isDryRun() {
+		klog.Infof("sendEvent: dryrun is set. Event was not sent to destination '%s'", dest)
+		return types.String("")
+	}
+
 	err = provider.Send(destNode, bytes, header)
 	if err != nil {
 		klog.Error(err)
-		return  types.ValOrErr(nil, "sendEventCEL error sending message: %v", err)
+		return types.ValOrErr(nil, "sendEventCEL error sending message: %v", err)
 	}
 	if klog.V(6) {
 		klog.Infof("sendEvent successfully sent message to destination '%s'", dest)
 	}
-	ret = types.String("")
-	return ret
+	return types.String("")
 }
 
 /* implementation of filter
