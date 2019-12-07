@@ -47,16 +47,16 @@ Run `go build` to build the executable `kabanero-events`.
 
 If you import new prerequisites in your source code:
 - run `dep ensure` to regenerate the vendor directory, and `Gopkg.lock`, `Gopkg.toml`.  
-- Re-run both the unit test and buld.
+- Re-run both the unit test and build.
 - Run `golint` to ensure it's lint free.
 - Push the updated `Gopkg.lock` and `Gopkg.toml` if any. 
 
 ##### Testing with an Existing Kabanero Collection
 
 To test locally outside of of a pod with existing event triggers in a collection:
-- Install and configure Kabanero foundation: `https://kabanero.io/docs/ref/general/installing-kabanero-foundation.html`. Also go through the optional section to make sure you can trigger a Tekton pipeline .
+- Install and configure Kabanero foundation: `https://kabanero.io/docs/ref/general/installing-kabanero-foundation.html`. Also go through the optional section to make sure you can trigger a Tekton pipeline.
 - Ensure you have kubectl configured and you are able to connect to an Openshift API Server.
-- `kabanero-events -master <path to openshift API server> -v <n>`,  where the -v option is the client-go logging verbosity.
+- `kabanero-events -master <path to openshift API server> -v <n>`,  where the `-v` option is the client-go logging verbosity.
 - To test webhook, create a new webhook to point to your local machine's host and port. For example, `https://my-host:9080/webhook`
 
 ##### Testing with Event Triggers in a sandbox
@@ -68,7 +68,7 @@ To set up your sandbox:
 -  Copy one of the sample sandboxes into your repository, say `sample1`.
 - Modify or create one or more subdirectories under `sample1`, each containing Kubernetes resources to be applied when an event trigger fires.
 - Create your `sample1.tar.gz` file: change directory to `sample1/triggers` and run the command `tar -cvzf ../sample1.tar.gz *`.  Push the changes.
-- Edit kabanero-index.yaml and modify the url under the triggers section to point to your URL of your sample1.tar.gz. Push the changes to your reposiotyr. For example:
+- Edit kabanero-index.yaml and modify the url under the triggers section to point to your URL of your sample1.tar.gz. Push the changes to your repository. For example:
 ```
 triggers:
  - description: triggers for this collection
