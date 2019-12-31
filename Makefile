@@ -8,6 +8,12 @@ build:
 push-image:
 	docker push $(IMAGE)
 
+local-build:
+	GO111MODULE=off go build
+
+lint:
+	golint -set_exit_status
+
 test:
 	GO111MODULE=off go test
 
