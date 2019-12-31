@@ -637,7 +637,7 @@ func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
 /* Get initial CEL environment 
 */
 func initializeEmptyCELEnv() (cel.Env, error) {
-	/* initilize empty CEL environment with additional functions */
+	/* initialize empty CEL environment with additional functions */
 	additionalFuncs := getAdditionalCELFuncDecls()
 //	klog.Infof("Additional Func Decls: %v", additionalFuncs)
 	return cel.NewEnv(additionalFuncs )
@@ -654,7 +654,7 @@ func initializeCELEnv(message map[string]interface{}, inputVariableName string) 
 		defer klog.Infof("Leaving initializeCELEnv")
 	}
 
-	/* initilize empty CEL environment with additional functions */
+	/* initialize empty CEL environment with additional functions */
 	env, err := initializeEmptyCELEnv()
 	if err != nil {
 		return nil, nil,  err
