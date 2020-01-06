@@ -131,7 +131,7 @@ $ git push -u origin master
 - Create a pull request
 - Check your Tekton dashboard for a new build that just performs a test build.
 
-#### Creating a new version via Github Tagging
+#### Creating a new version via GitHub Tagging
 
 - Create a new namespace project1-test
 - Switch back go the master repository
@@ -269,7 +269,7 @@ This example shows:
 
 A webhook listener is not created by default unless it is enabled in the custom resource definition (CRD) used to create a Kabanero instance.  Below is a sample CRD that creates a new Kabanero instance that also enables the webhook component.
 
-```
+```yaml
 apiVersion: kabanero.io/v1alpha1
 kind: Kabanero
 metadata:
@@ -281,7 +281,7 @@ spec:
       - activateDefaultCollections: true
         name: incubator
         url: https://github.com/kabanero-io/collections/releases/download/0.4.0/kabanero-index.yaml
-  webhook:
+  events:
     enable: true
   version: 0.4.0
 ```
@@ -289,7 +289,7 @@ spec:
 If the webhook component is enabled, a route is also created. You can get more information about the route via `oc get route kabanero-events -o yaml`.
 
 The webhook component expects to receive POST requests in JSON format, and creates a new JSON event that contains:
-```json
+```
 {
   "header": {
     // Headers that were received
