@@ -1,4 +1,4 @@
-IMAGE ?= kabanero/kabanero-event
+IMAGE ?= kabanero/kabanero-events
 
 .PHONY: build push-image
 
@@ -9,13 +9,13 @@ push-image:
 	docker push $(IMAGE)
 
 local-build:
-	GO111MODULE=off go build
+	GO111MODULE=off go build ./...
 
 lint:
 	golint -set_exit_status
 
 test:
-	GO111MODULE=off go test
+	GO111MODULE=off go test ./...
 
 format:
-	go fmt *.go
+	GO111MODULE=off go fmt ./...
