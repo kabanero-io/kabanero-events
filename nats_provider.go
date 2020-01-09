@@ -9,8 +9,8 @@ import (
 
 type natsProvider struct {
 	messageProviderDefinition *MessageProviderDefinition
-    connection *nats.Conn
-	subscription map[string]*nats.Subscription
+	connection                *nats.Conn
+	subscription              map[string]*nats.Subscription
 }
 
 func (provider *natsProvider) initialize(mpd *MessageProviderDefinition) error {

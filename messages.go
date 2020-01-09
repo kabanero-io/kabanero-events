@@ -8,11 +8,11 @@ import (
 )
 
 // ReceiverFunc is called when an event is received from an event source.
-type ReceiverFunc func ([]byte)
+type ReceiverFunc func([]byte)
 
 // MessageProvider must be implemented for whichever messaging provider to be supported.
 type MessageProvider interface {
-	// Send a new message to an eventDestination. 
+	// Send a new message to an eventDestination.
 	// The first parameter is message body. The second parameter is optional header or context
 	Send(*EventNode, []byte, interface{}) error
 
@@ -26,27 +26,26 @@ type MessageProvider interface {
 
 // EventDefinition contains providers, event sources, and event destinations.
 type EventDefinition struct {
-	MessageProviders      []*MessageProviderDefinition     `yaml:"messageProviders,omitempty"`
-	EventDestinations     []*EventNode                     `yaml:"eventDestinations,omitempty"`
+	MessageProviders  []*MessageProviderDefinition `yaml:"messageProviders,omitempty"`
+	EventDestinations []*EventNode                 `yaml:"eventDestinations,omitempty"`
 }
 
 // MessageProviderDefinition describes a message provider and its URLs.
 type MessageProviderDefinition struct {
-	Name                  string                           `yaml:"name"`
-	ProviderType          string                           `yaml:"providerType"`
-	URL                   string                           `yaml:"url"`
-	Timeout               time.Duration                    `yaml:"timeout"`
-	SkipTLSVerify         bool                             `yaml:"skipTLSVerify,omitempty"`
+	Name          string        `yaml:"name"`
+	ProviderType  string        `yaml:"providerType"`
+	URL           string        `yaml:"url"`
+	Timeout       time.Duration `yaml:"timeout"`
+	SkipTLSVerify bool          `yaml:"skipTLSVerify,omitempty"`
 }
 
 // EventNode represents either an event source or destination and consists of a provider reference and the topic to
 // either send to or receive from.
 type EventNode struct {
-	Name                  string                           `yaml:"name"`
-	Topic                 string                           `yaml:"topic"`
-	ProviderRef           string                           `yaml:"providerRef"`
+	Name        string `yaml:"name"`
+	Topic       string `yaml:"topic"`
+	ProviderRef string `yaml:"providerRef"`
 }
-
 
 var (
 	messageProviders map[string]MessageProvider
@@ -75,7 +74,7 @@ func initializeEventProviders(fileName string) (*EventDefinition, error) {
 			}
 			err = RegisterProvider(provider.Name, natsProvider)
 			if err != nil {
-                klog.Warning(err)
+				klog.Warning(err)
 			}
 		case "rest":
 			if klog.V(6) {
@@ -83,7 +82,7 @@ func initializeEventProviders(fileName string) (*EventDefinition, error) {
 			}
 			restProvider, err := newRESTProvider(provider)
 			if err != nil {
-                klog.Warning(err)
+				klog.Warning(err)
 			}
 			err = RegisterProvider(provider.Name, restProvider)
 			if err != nil {

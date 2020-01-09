@@ -18,40 +18,37 @@ package main
 
 import (
 	"encoding/json"
-	"net/http"
-	"io"
+	"github.com/google/go-github/github"
+	"github.com/kabanero-io/kabanero-events/internal/utils"
 	"io/ioutil"
 	"k8s.io/klog"
-	"github.com/google/go-github/github"
+	"net/http"
 	"os"
 
-	// "golang.org/x/oauth2"
 	"context"
 	"fmt"
-	"strings"
 )
 
 const (
 	tlsCertPath = "/etc/tls/tls.crt"
-	tlsKeyPath = "/etc/tls/tls.key"
+	tlsKeyPath  = "/etc/tls/tls.key"
 )
 
-
-/* HTTP listsnert */
+/* HTTP listener */
 func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 
-    header := req.Header
-	klog.Infof("Recevied request. Header: %v", header)
+	header := req.Header
+	klog.Infof("Received request. Header: %v", header)
 
-	var body io.ReadCloser = req.Body
+	var body = req.Body
 
 	defer body.Close()
 	bytes, err := ioutil.ReadAll(body)
 	if err != nil {
-		klog.Errorf("Webhook listener can not read body. Error: %v", err);
+		klog.Errorf("Webhook listener can not read body. Error: %v", err)
 	} else {
-	 	klog.Infof("Webhook listener received body: %v", string(bytes))
-    }
+		klog.Infof("Webhook listener received body: %v", string(bytes))
+	}
 
 	var bodyMap map[string]interface{}
 	err = json.Unmarshal(bytes, &bodyMap)
@@ -59,7 +56,6 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 		klog.Errorf("Unable to unarmshal json body: %v", err)
 		return
 	}
-
 
 	message := make(map[string]interface{})
 	message[HEADER] = map[string][]string(header)
@@ -90,14 +86,14 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		klog.Errorf("Error processing webhook message: %v", err)
 	}
+	writer.WriteHeader(http.StatusAccepted)
 }
 
-
-func newListener() error{
+func newListener() error {
 	http.HandleFunc("/webhook", listenerHandler)
 
 	if disableTLS {
-		klog.Infof("Starting listener on port 9080");
+		klog.Infof("Starting listener on port 9080")
 		err := http.ListenAndServe(":9080", nil)
 		return err
 	}
@@ -113,7 +109,7 @@ func newListener() error{
 		return err
 	}
 
-	klog.Infof("Starting listener on port 9443");
+	klog.Infof("Starting listener on port 9443")
 	err := http.ListenAndServeTLS(":9443", tlsCertPath, tlsKeyPath, nil)
 	return err
 }
@@ -126,7 +122,7 @@ func getRepositoryInfo(body map[string]interface{}, repositoryEvent string) (str
 		// use SHA for ref
 		afterObj, ok := body["after"]
 		if !ok {
-			return "", "", "", "", fmt.Errorf("Unable to find after for push webhook message")
+			return "", "", "", "", fmt.Errorf("unable to find after for push webhook message")
 		}
 		ref, ok = afterObj.(string)
 		if !ok {
@@ -136,7 +132,7 @@ func getRepositoryInfo(body map[string]interface{}, repositoryEvent string) (str
 		// use pull_request.head.sha
 		prObj, ok := body["pull_request"]
 		if !ok {
-			return "", "", "", "", fmt.Errorf("Unable to find pull_request in webhook message")
+			return "", "", "", "", fmt.Errorf("unable to find pull_request in webhook message")
 		}
 		prMap, ok := prObj.(map[string]interface{})
 		if !ok {
@@ -163,7 +159,7 @@ func getRepositoryInfo(body map[string]interface{}, repositoryEvent string) (str
 
 	repositoryObj, ok := body["repository"]
 	if !ok {
-		return "", "", "", "", fmt.Errorf("Unable to find repository in webhook message")
+		return "", "", "", "", fmt.Errorf("unable to find repository in webhook message")
 	}
 	repository, ok := repositoryObj.(map[string]interface{})
 	if !ok {
@@ -196,7 +192,6 @@ func getRepositoryInfo(body map[string]interface{}, repositoryEvent string) (str
 		return "", "", "", "", fmt.Errorf("webhook message repository owner login not string : %v", ownerObj)
 	}
 
-
 	htmlURLObj, ok := repository["html_url"]
 	if !ok {
 		return "", "", "", "", fmt.Errorf("webhook message repository html_url not found")
@@ -206,83 +201,28 @@ func getRepositoryInfo(body map[string]interface{}, repositoryEvent string) (str
 		return "", "", "", "", fmt.Errorf("webhook message html_url not string: %v", htmlURL)
 	}
 
-	return owner, name,  htmlURL, ref, nil
+	return owner, name, htmlURL, ref, nil
 }
 
+// Download file and return: bytes of the file, true if file texists, and any error
+func downloadFileFromGithub(owner, repository, fileName, ref, githubURL, user, token string, isEnterprise bool) ([]byte, bool, error) {
 
-/*
-func testGithubEnterprise() error {
-    prefix, collection, version, err := downloadAppsodyConfig("kabanero-org-test", "test1", "https://github.ibm.com", "w3id", "token", true)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("prefix: %s, collection: %s, version: %s\n", prefix, collection, version)
-	return nil
-}
-*/
-
-/* Download .appsody-cofig.yaml and return: prefix, collection, version, true if file exists, and error 
- for example:  stack: kabanero/nodejs-express:0.2 
-	prefix: kabanero
-	collection: nodejs-express
-	version: 0.2
-*/
-func downloadAppsodyConfig(owner, repository, githubURL, ref, user, token string, isEnterprise bool) (string, string, string, bool, error) {
-	buf, exists, err := downloadFileFromGithub(owner, repository,".appsody-config.yaml", ref, githubURL, user, token, isEnterprise)
-	if err != nil {
-		return "", "", "", exists, err
-	}
-
-	if !exists {
-		return "", "", "", exists, nil
-	}
-
-	/* look in the yaml for: stack: kabanero/nodejs-express:0.2 */
-    appsodyConfigMap, err := yamlToMap(buf);
-    if err != nil {
-        return "", "", "", true, err
-    }
-    stack, ok := appsodyConfigMap["stack"]
-    if !ok {
-	   return "", "", "", true, fmt.Errorf(".appsody-config.yaml does not contain stack")
-    }
-    stackStr, ok := stack.(string)
-    if !ok {
-	   return "", "", "", true, fmt.Errorf(".appsody-config.yaml stack: %s is not a string", stack)
-    }
-
-	components := strings.Split(stackStr, ":")
-	if len(components) == 2 {
-		prefixName := strings.Trim(components[0], " ")
-		prefixNameArray := strings.Split(prefixName, "/")
-		if len(prefixNameArray) == 2 {
-			return prefixNameArray[0], prefixNameArray[1], components[1], true, nil
-		}
-	} 
-	return "", "", "", true, fmt.Errorf(".appsody-config.yaml contains %v.  It is not of the format stacK: prefix/name:version", stackStr)
-
-}
-
-/* Download file and return: bytes of the file, true if file texists, and any error
-*/
-func downloadFileFromGithub(owner, repository,fileName, ref, githubURL, user, token string, isEnterprise bool) ([]byte, bool, error) {
-
-	if klog.V(5){
+	if klog.V(5) {
 		klog.Infof("downloadFileFromGithub %v, %v, %v, %v, %v, %v, %v", owner, repository, fileName, ref, githubURL, user, isEnterprise)
 	}
 
-	context := context.Background()
+	ctx := context.Background()
 
-    tp := github.BasicAuthTransport{
-       Username: user,
-       Password: token,
-    }
-/*
-	tokenService := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tokenClient := oauth2.NewClient(context, tokenService)
-*/
+	tp := github.BasicAuthTransport{
+		Username: user,
+		Password: token,
+	}
+	/*
+		tokenService := oauth2.StaticTokenSource(
+			&oauth2.Token{AccessToken: token},
+		)
+		tokenClient := oauth2.NewClient(ctx, tokenService)
+	*/
 
 	var err error
 	var client *github.Client
@@ -296,26 +236,26 @@ func downloadFileFromGithub(owner, repository,fileName, ref, githubURL, user, to
 		client = github.NewClient(tp.Client())
 	}
 
-	var options *github.RepositoryContentGetOptions = nil
+	var options *github.RepositoryContentGetOptions
 	if ref != "" {
-		options = &github.RepositoryContentGetOptions{ ref }
+		options = &github.RepositoryContentGetOptions{ref}
 	}
 
-/*
-    rc, err := client.Repositories.DownloadContents(context, owner, repository, fileName, options)
-    if err != nil {
-		fmt.Printf("Error type: %T, value: %v\n", err, err)
-        return nil, false, err
-    }
-    defer rc.Close()
-	buf, err := ioutil.ReadAll(rc)
-*/
-	fileContent, _, resp, err := client.Repositories.GetContents(context, owner, repository, fileName, options)
+	/*
+	       rc, err := client.Repositories.DownloadContents(ctx, owner, repository, fileName, options)
+	       if err != nil {
+	   		fmt.Printf("Error type: %T, value: %v\n", err, err)
+	           return nil, false, err
+	       }
+	       defer rc.Close()
+	   	buf, err := ioutil.ReadAll(rc)
+	*/
+	fileContent, _, resp, err := client.Repositories.GetContents(ctx, owner, repository, fileName, options)
 	if resp.Response.StatusCode == 200 {
 		if fileContent != nil {
 			if fileContent.Content == nil {
-				return nil, true, fmt.Errorf("Content for %v/%v/%v is nil" , owner, repository, fileName)
-			} 
+				return nil, true, fmt.Errorf("content for %v/%v/%v is nil", owner, repository, fileName)
+			}
 
 			content, err := fileContent.GetContent()
 			if err != nil {
@@ -324,9 +264,9 @@ func downloadFileFromGithub(owner, repository,fileName, ref, githubURL, user, to
 				klog.Infof("download File from Github: buffer %v", content)
 			}
 			return []byte(content), true, err
-		} 
+		}
 		/* some other errors */
-		return nil, false, fmt.Errorf("unable to download %v/%v/%v: not a file" , owner, repository, fileName)
+		return nil, false, fmt.Errorf("unable to download %v/%v/%v: not a file", owner, repository, fileName)
 	} else if resp.Response.StatusCode == 400 {
 		/* does not exist */
 		return nil, false, nil
@@ -337,17 +277,16 @@ func downloadFileFromGithub(owner, repository,fileName, ref, githubURL, user, to
 
 }
 
-
-/* Download YAML from Repository. 
-	header: HTTP header from webhook
-	bodyMap: HTTP  message body from webhook 
+/* Download YAML from Repository.
+header: HTTP header from webhook
+bodyMap: HTTP  message body from webhook
 */
-func downloadYAML(header map[string][]string, bodyMap map[string]interface{}, fileName string ) (map[string]interface{}, bool, error) {
+func downloadYAML(header map[string][]string, bodyMap map[string]interface{}, fileName string) (map[string]interface{}, bool, error) {
 
 	hostHeader, isEnterprise := header[http.CanonicalHeaderKey("x-github-enterprise-host")]
-    var host string
+	var host string
 	if !isEnterprise {
-        host = "github.com"
+		host = "github.com"
 	} else {
 		host = hostHeader[0]
 	}
@@ -356,21 +295,20 @@ func downloadYAML(header map[string][]string, bodyMap map[string]interface{}, fi
 
 	owner, name, htmlURL, ref, err := getRepositoryInfo(bodyMap, repositoryEvent)
 	if err != nil {
-		return nil, false, fmt.Errorf("Unable to get repository owner, name, or html_url from webhook message: %v", err);
+		return nil, false, fmt.Errorf("unable to get repository owner, name, or html_url from webhook message: %v", err)
 	}
 
-    user, token , _, err := getURLAPIToken(dynamicClient, webhookNamespace, htmlURL )
+	user, token, _, err := utils.GetURLAPIToken(dynamicClient, webhookNamespace, htmlURL)
 	if err != nil {
-		return nil, false, fmt.Errorf("Unable to get user/token secrets for URL %v", htmlURL);
+		return nil, false, fmt.Errorf("unable to get user/token secrets for URL %v", htmlURL)
 	}
 
 	githubURL := "https://" + host
-
 
 	bytes, found, err := downloadFileFromGithub(owner, name, fileName, ref, githubURL, user, token, isEnterprise)
 	if err != nil {
 		return nil, found, err
 	}
-	retMap, err := yamlToMap(bytes);
+	retMap, err := utils.YAMLToMap(bytes)
 	return retMap, found, err
 }

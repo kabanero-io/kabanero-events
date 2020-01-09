@@ -49,14 +49,14 @@ func TestProviderListenAndSend(t *testing.T) {
 	t.Log("Creating subscriptions for event sources")
 
 	/*
-	for _, eventSource := range eventProviders.EventSources {
-		provider := eventProviders.GetMessageProvider(eventSource.ProviderRef)
-		t.Logf("Subscribing to event source '%s'", eventSource.ProviderRef)
-		echoMessage := func(data []byte) {
-			t.Logf("Message body: %s", data)
+		for _, eventSource := range eventProviders.EventSources {
+			provider := eventProviders.GetMessageProvider(eventSource.ProviderRef)
+			t.Logf("Subscribing to event source '%s'", eventSource.ProviderRef)
+			echoMessage := func(data []byte) {
+				t.Logf("Message body: %s", data)
+			}
+			go provider.ListenAndServe(eventSource, echoMessage)
 		}
-		go provider.ListenAndServe(eventSource, echoMessage)
-	}
 	*/
 
 	// Give the listener a bit of time to start up before sending messages
@@ -107,16 +107,16 @@ func TestProviderSendAndReceive(t *testing.T) {
 	// Start listening on all eventSources
 	t.Log("Creating subscriptions for event sources")
 
-/*
-	for _, eventSource := range eventProviders.EventSources {
-		provider := eventProviders.GetMessageProvider(eventSource.ProviderRef)
-		t.Logf("Subscribing to event source '%s'", eventSource.ProviderRef)
-		err := provider.Subscribe(eventSource)
-		if err != nil {
-			t.Fatalf("unable to subscribe to eventSource '%s'", eventSource.Name)
+	/*
+		for _, eventSource := range eventProviders.EventSources {
+			provider := eventProviders.GetMessageProvider(eventSource.ProviderRef)
+			t.Logf("Subscribing to event source '%s'", eventSource.ProviderRef)
+			err := provider.Subscribe(eventSource)
+			if err != nil {
+				t.Fatalf("unable to subscribe to eventSource '%s'", eventSource.Name)
+			}
 		}
-	}
-*/
+	*/
 
 	var wg sync.WaitGroup
 
@@ -142,20 +142,20 @@ func TestProviderSendAndReceive(t *testing.T) {
 	wg.Wait()
 
 	// And receive them here
-/*
-	numMessagesExpected := 2
-	for _, eventSource := range eventProviders.EventSources {
-		provider := eventProviders.GetMessageProvider(eventSource.ProviderRef)
+	/*
+		numMessagesExpected := 2
+		for _, eventSource := range eventProviders.EventSources {
+			provider := eventProviders.GetMessageProvider(eventSource.ProviderRef)
 
-		// Try maxAttempts times to receive messages before giving up
-		for i := 0; i < numMessagesExpected; i++ {
-			t.Logf("Waiting for message %d / %d eventSource '%s'", i + 1, numMessagesExpected, eventSource.Name)
-			b, err := provider.Receive(eventSource)
-			if err != nil {
-				t.Fatalf("timed out waiting for a message from eventSource '%s'", eventSource.Name)
+			// Try maxAttempts times to receive messages before giving up
+			for i := 0; i < numMessagesExpected; i++ {
+				t.Logf("Waiting for message %d / %d eventSource '%s'", i + 1, numMessagesExpected, eventSource.Name)
+				b, err := provider.Receive(eventSource)
+				if err != nil {
+					t.Fatalf("timed out waiting for a message from eventSource '%s'", eventSource.Name)
+				}
+				t.Logf("Received message from eventSource '%s': %s", eventSource.Name, b)
 			}
-			t.Logf("Received message from eventSource '%s': %s", eventSource.Name, b)
 		}
-	}
-*/
+	*/
 }

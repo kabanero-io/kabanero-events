@@ -2,11 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
+	"fmt"
 	"k8s.io/klog"
 	"net/http"
-	"fmt"
 	"time"
-	"crypto/tls"
 )
 
 type restProvider struct {
@@ -34,9 +34,9 @@ func (provider *restProvider) Send(node *EventNode, payload []byte, header inter
 	if klog.V(6) {
 		klog.Infof("restProvider: Sending %s", string(payload))
 	}
-	
+
 	req, err := http.NewRequest("POST", provider.messageProviderDefinition.URL, bytes.NewBuffer(payload))
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
@@ -53,16 +53,16 @@ func (provider *restProvider) Send(node *EventNode, payload []byte, header inter
 	}
 	req.Header.Add("Content-Type", "application/json")
 
-	tr := &http.Transport{ }
+	tr := &http.Transport{}
 	if provider.messageProviderDefinition.SkipTLSVerify {
-		tr.TLSClientConfig =  &tls.Config{InsecureSkipVerify: true}
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
 	// TODO: honor timeout
-	timeout := time.Duration(5*time.Second) // TODO: make it configurable
-	client := &http.Client {
+	timeout := time.Duration(5 * time.Second) // TODO: make it configurable
+	client := &http.Client{
 		Transport: tr,
-		Timeout: timeout,
+		Timeout:   timeout,
 	}
 
 	resp, err := client.Do(req)

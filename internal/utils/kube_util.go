@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package utils
 
 import (
 	"bytes"
@@ -34,22 +34,21 @@ const (
 	V1                         = "v1"
 	V1ALPHA1                   = "v1alpha1"
 	KABANEROIO                 = "kabanero.io"
-	KABANERO                   = "kabanero"
 	KABANEROS                  = "kabaneros"
 	ANNOTATIONS                = "annotations"
 	DATA                       = "data"
 	URL                        = "url"
 	USERNAME                   = "username"
 	PASSWORD                   = "password"
-	TOKEN                      = "token"
 	SECRETS                    = "secrets"
 	SPEC                       = "spec"
 	COLLECTIONS                = "collections"
 	REPOSITORIES               = "repositories"
 	ACTIVATEDEFAULTCOLLECTIONS = "activateDefaultCollections"
+	METADATA                   = "metadata"
 
-    maxLabelLength = 63  // max length of a label in Kubernetes
-    maxNameLength  = 253 // max length of a name in Kubernetes
+	maxLabelLength = 63  // max length of a label in Kubernetes
+	maxNameLength  = 253 // max length of a name in Kubernetes
 )
 
 /*
@@ -75,7 +74,7 @@ data:
 
 Return: username, token, secret name, error
 */
-func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, string, error) {
+func GetURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, string, error) {
 	if klog.V(5) {
 		klog.Infof("getURLAPIToken namespace: %s, repoURL: %s", namespace, repoURL)
 	}
@@ -119,7 +118,7 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 			continue
 		}
 
-		tektonList := make([]string,0)
+		tektonList := make([]string, 0)
 		kabaneroList := make([]string, 0)
 		for key, val := range annotations {
 			if strings.HasPrefix(key, "kabanero.io/git-") {
@@ -136,9 +135,9 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 		}
 
 		/* find that annotation that is a match */
-		urlMatched, matchedURL := matchPrefix(repoURL, kabaneroList) 
+		urlMatched, matchedURL := matchPrefix(repoURL, kabaneroList)
 		if !urlMatched {
-			urlMatched, matchedURL = matchPrefix(repoURL, tektonList) 
+			urlMatched, matchedURL = matchPrefix(repoURL, tektonList)
 		}
 		if !urlMatched {
 			/* no match */
@@ -147,16 +146,15 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 		if klog.V(5) {
 			klog.Infof("getURLAPIToken found match %v", matchedURL)
 		}
-		
 
-        nameObj, ok := metadata["name"]
-        if !ok {
-            continue
-        }
-        name, ok := nameObj.(string)
-        if !ok {
-            continue
-        } 
+		nameObj, ok := metadata["name"]
+		if !ok {
+			continue
+		}
+		name, ok := nameObj.(string)
+		if !ok {
+			continue
+		}
 
 		dataMapObj, ok := objMap[DATA]
 		if !ok {
@@ -195,22 +193,21 @@ func getURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL strin
 		if err != nil {
 			return "", "", "", err
 		}
-		return string(decodedUserName), string(decodedToken), name,  nil
+		return string(decodedUserName), string(decodedToken), name, nil
 	}
-	return "", "", "", fmt.Errorf("Unable to find API token for url: %s", repoURL)
+	return "", "", "", fmt.Errorf("unable to find API token for url: %s", repoURL)
 }
 
-
-/* 
+/*
  Input:
 	str: input string
 	arrStr: input array of string
- Return: 
+ Return:
 	true if any element of arrStr is a prefix of str
 	the first element of arrStr that is a prefix of str
- */
-func matchPrefix(str string, arrStr [] string) (bool, string) {
-	for _, val := range arrStr  {
+*/
+func matchPrefix(str string, arrStr []string) (bool, string) {
+	for _, val := range arrStr {
 		if strings.HasPrefix(str, val) {
 			return true, val
 		}
@@ -218,10 +215,9 @@ func matchPrefix(str string, arrStr [] string) (bool, string) {
 	return false, ""
 }
 
-
 /* Get the URL to kabanero-index.yaml
  */
-func getKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string, error) {
+func GetKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string, error) {
 	if klog.V(5) {
 		klog.Infof("Entering getKabaneroIndexURL")
 		defer klog.Infof("Leaving getKabaneroIndexURL")
@@ -336,14 +332,14 @@ func getKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string,
 			}
 		}
 	}
-	return "", fmt.Errorf("Unable to find collection url in kabanero custom resource for namespace %s", namespace)
+	return "", fmt.Errorf("unable to find collection url in kabanero custom resource for namespace %s", namespace)
 }
 
 /* @Return true if character is valid for a domain name */
 func isValidDomainNameChar(ch byte) bool {
-    return (ch == '.' || ch == '-' ||
-        (ch >= 'a' && ch <= 'z') ||
-        (ch >= '0' && ch <= '9'))
+	return ch == '.' || ch == '-' ||
+		(ch >= 'a' && ch <= 'z') ||
+		(ch >= '0' && ch <= '9')
 }
 
 /* Convert a name to domain name format.
@@ -355,67 +351,67 @@ func isValidDomainNameChar(ch byte) bool {
  - can't have consecutive '.'.  Consecutivie ".." is substituted with ".".
 Return emtpy string if the name is empty after conversion
 */
-func toDomainName(name string) string {
-    maxLength := maxNameLength
-    name = strings.ToLower(name)
-    ret := bytes.Buffer{}
-    chars := []byte(name)
-    for i, ch := range chars {
-        if i == 0 {
-            // first character must be [a-z0-9]
-            if (ch >= 'a' && ch <= 'z') ||
-                (ch >= '0' && ch <= '9') {
-                ret.WriteByte(ch)
-            } else {
-                ret.WriteByte('0')
-                if isValidDomainNameChar(ch) {
-                    ret.WriteByte(ch)
-                } else {
-                    ret.WriteByte('.')
-                }
-            }
-        } else {
-            if isValidDomainNameChar(ch) {
-                ret.WriteByte(ch)
-            } else {
-                ret.WriteByte('.')
-            }
-        }
-    }
+func ToDomainName(name string) string {
+	maxLength := maxNameLength
+	name = strings.ToLower(name)
+	ret := bytes.Buffer{}
+	chars := []byte(name)
+	for i, ch := range chars {
+		if i == 0 {
+			// first character must be [a-z0-9]
+			if (ch >= 'a' && ch <= 'z') ||
+				(ch >= '0' && ch <= '9') {
+				ret.WriteByte(ch)
+			} else {
+				ret.WriteByte('0')
+				if isValidDomainNameChar(ch) {
+					ret.WriteByte(ch)
+				} else {
+					ret.WriteByte('.')
+				}
+			}
+		} else {
+			if isValidDomainNameChar(ch) {
+				ret.WriteByte(ch)
+			} else {
+				ret.WriteByte('.')
+			}
+		}
+	}
 
-    // change all ".." to ".
-    retStr := ret.String()
-    for strings.Index(retStr, "..") > 0 {
-        retStr = strings.ReplaceAll(retStr, "..", ".")
-    }
+	// change all ".." to ".
+	retStr := ret.String()
+	for strings.Index(retStr, "..") > 0 {
+		retStr = strings.ReplaceAll(retStr, "..", ".")
+	}
 
-    strLen := len(retStr)
-    if strLen == 0 {
-        return retStr
-    }
-    if strLen > maxLength {
-        strLen = maxLength
-        retStr = retStr[0:strLen]
-    }
-    ch := retStr[strLen-1]
-    if (ch >= 'a' && ch <= 'z') ||
-        (ch >= '0' && ch <= '9') {
-        // last char is alphanumeric
-        return retStr
-    }
-    if strLen < maxLength-1 {
-        //  append alphanumeric
-        return retStr + "0"
-    }
-    // replace last char to be alphanumeric
-    return retStr[0:strLen-2] + "0"
+	strLen := len(retStr)
+	if strLen == 0 {
+		return retStr
+	}
+	if strLen > maxLength {
+		strLen = maxLength
+		retStr = retStr[0:strLen]
+	}
+	ch := retStr[strLen-1]
+	if (ch >= 'a' && ch <= 'z') ||
+		(ch >= '0' && ch <= '9') {
+		// last char is alphanumeric
+		return retStr
+	}
+	if strLen < maxLength-1 {
+		//  append alphanumeric
+		return retStr + "0"
+	}
+	// replace last char to be alphanumeric
+	return retStr[0:strLen-2] + "0"
 }
 
 func isValidLabelChar(ch byte) bool {
-	return (ch == '.' || ch == '-' || (ch == '_') ||
+	return ch == '.' || ch == '-' || (ch == '_') ||
 		(ch >= 'a' && ch <= 'z') ||
 		(ch >= 'A' && ch <= 'Z') ||
-		(ch >= '0' && ch <= '9'))
+		(ch >= '0' && ch <= '9')
 }
 
 /* Convert the  name part of  a label
@@ -425,7 +421,7 @@ func isValidLabelChar(ch byte) bool {
    - Intermediate characters can only be: [a-z0-9A-Z] or '_', '-', and '.' If not, '.' is used.
 - be maximum maxLabelLength characters long
 */
-func toLabelName(name string) string {
+func ToLabelName(name string) string {
 	chars := []byte(name)
 	ret := bytes.Buffer{}
 	for i, ch := range chars {
@@ -477,7 +473,7 @@ func toLabelName(name string) string {
 	}
 }
 
-func toLabel(input string) string {
+func ToLabel(input string) string {
 	slashIndex := strings.Index(input, "/")
 	var prefix, label string
 	if slashIndex < 0 {
@@ -491,8 +487,8 @@ func toLabel(input string) string {
 		label = input[slashIndex+1:]
 	}
 
-	newPrefix := toDomainName(prefix)
-	newLabel := toLabelName(label)
+	newPrefix := ToDomainName(prefix)
+	newLabel := ToLabelName(label)
 	ret := ""
 	if newPrefix == "" {
 		if newLabel == "" {

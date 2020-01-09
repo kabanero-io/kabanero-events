@@ -18,22 +18,23 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"github.com/kabanero-io/kabanero-events/internal/utils"
+	"gopkg.in/yaml.v2"
 	"io/ioutil"
-//	"os"
+	//	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
-	"gopkg.in/yaml.v2"
-	"sync"
-	"encoding/json"
-	"reflect"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
-	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types"
+	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/interpreter/functions"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -59,7 +60,7 @@ eventTriggers:
    input: <variable>
    body:
     ...
-  - eventSources: 
+  - eventSources:
     ...
 
 function section:
@@ -110,42 +111,42 @@ body:
         - <ident>: <value>
 	- <ident>: <value>
 */
-  
+
 /* constants for parsing */
 const (
-	METADATA   = "metadata"
-	LABELS     = "labels"
-	APIVERSION = "apiVersion"
-	KIND       = "kind"
-	NAME       = "name"
-	NAMESPACE  = "namespace"
-	EVENT      = "event" // TODO: remove
-	MESSAGE    = "message"
-	HEADER     = "header"
-    JOBID      = "jobid"
-	TYPEINT    = "int"
-	TYPEDOUBLE = "double"
-	TYPEBOOL   = "bool"
-	TYPESTRING = "string"
-	TYPELIST   = "list"
-	TYPEMAP    = "map"
-	WEBHOOK    = "webhook"
-	BODY       = "body"
-	IF         = "if"
-	SWITCH     = "switch"
-	DEFAULT    = "default"
-	EVENTSOURCE = "eventSource"
-	INPUT       = "input"
-	OUTPUT       = "output"
-	SETTINGS    = "settings"
+	METADATA      = "metadata"
+	LABELS        = "labels"
+	APIVERSION    = "apiVersion"
+	KIND          = "kind"
+	NAME          = "name"
+	NAMESPACE     = "namespace"
+	EVENT         = "event" // TODO: remove
+	MESSAGE       = "message"
+	HEADER        = "header"
+	JOBID         = "jobid"
+	TYPEINT       = "int"
+	TYPEDOUBLE    = "double"
+	TYPEBOOL      = "bool"
+	TYPESTRING    = "string"
+	TYPELIST      = "list"
+	TYPEMAP       = "map"
+	WEBHOOK       = "webhook"
+	BODY          = "body"
+	IF            = "if"
+	SWITCH        = "switch"
+	DEFAULT       = "default"
+	EVENTSOURCE   = "eventSource"
+	INPUT         = "input"
+	OUTPUT        = "output"
+	SETTINGS      = "settings"
 	EVENTTRIGGERS = "eventTriggers"
-	SYSTEMERROR = "systemError"
-	FUNCTIONS   = "functions"
+	SYSTEMERROR   = "systemError"
+	FUNCTIONS     = "functions"
 )
 
 const (
 	// IfFlag is flag for If statement
-	IfFlag uint = 1<< iota  
+	IfFlag uint = 1 << iota
 	// SwitchFlag is flag for switch statement
 	SwitchFlag
 	// DefaultFlag is flag for default statement
@@ -154,27 +155,27 @@ const (
 	BodyFlag
 )
 
-var keywords map[string] uint = map[string] uint {
-	IF: IfFlag,
-	SWITCH: SwitchFlag,
-	DEFAULT: DefaultFlag, 
-	BODY: BodyFlag,
+var keywords = map[string]uint{
+	IF:      IfFlag,
+	SWITCH:  SwitchFlag,
+	DEFAULT: DefaultFlag,
+	BODY:    BodyFlag,
 }
 
-func  isKeyword(variableName string) bool {
+func isKeyword(variableName string) bool {
 	_, ok := keywords[variableName]
 	return ok
 }
 
 /*
-Return 
+Return
 - number of the keywords in the map
 - flag for all the keywords found
 */
 func countKeywords(mymap map[interface{}]interface{}) (int, uint) {
 	count := 0
 	flag := uint(0)
-	for keyObj:= range mymap {
+	for keyObj := range mymap {
 		key, ok := keyObj.(string)
 		if ok {
 			mask, ok := keywords[key]
@@ -199,9 +200,9 @@ func (td *eventTriggerDefinition) isDryRun() bool {
 }
 
 type eventTriggerDefinition struct {
-  setting []map[interface{}]interface{} // all settings 
-  eventTriggers map[string] []map[interface{}]interface{} // event source name to triggers 
-  functions map[string]map[interface{}]interface{} // funtion name to function body
+	setting       []map[interface{}]interface{}            // all settings
+	eventTriggers map[string][]map[interface{}]interface{} // event source name to triggers
+	functions     map[string]map[interface{}]interface{}   // function name to function body
 }
 
 type triggerProcessor struct {
@@ -217,20 +218,20 @@ func newTriggerProcessor() *triggerProcessor {
 func (tp *triggerProcessor) initialize(dir string) error {
 	if klog.V(6) {
 		klog.Infof("triggerProcessor.initialize %v", dir)
-		defer klog.Infof("Leaving trigggerProcessor.initialize %v", dir)
+		defer klog.Infof("Leaving triggerProcessor.initialize %v", dir)
 	}
 	var err error
-	tp.triggerDef = &eventTriggerDefinition {
-		setting: make([]map[interface{}]interface{}, 0),
-		eventTriggers: make(map[string] []map[interface{}]interface{}, 0),
-		functions: make(map[string]map[interface{}]interface{}, 0),
+	tp.triggerDef = &eventTriggerDefinition{
+		setting:       make([]map[interface{}]interface{}, 0),
+		eventTriggers: make(map[string][]map[interface{}]interface{}, 0),
+		functions:     make(map[string]map[interface{}]interface{}, 0),
 	}
-	files, err := findFiles(dir, []string { ".yaml", ".yml"})
+	files, err := findFiles(dir, []string{".yaml", ".yml"})
 	if err != nil {
 		return err
 	}
 	if len(files) == 0 {
-		return fmt.Errorf("Unable to locate trigger files at directory %v", dir)
+		return fmt.Errorf("unable to locate trigger files at directory %v", dir)
 	}
 	for _, fileName := range files {
 		err = readTriggerDefinition(fileName, tp.triggerDef)
@@ -242,19 +243,19 @@ func (tp *triggerProcessor) initialize(dir string) error {
 	return nil
 }
 
-func messageListener(provider MessageProvider, node *EventNode ) {
+func messageListener(provider MessageProvider, node *EventNode) {
 	klog.Infof("Starting listener event destination %v", node.Name)
 	for {
-		bytes, err := provider.Receive(node)
+		buf, err := provider.Receive(node)
 		if err != nil {
 			klog.Errorf("Message listener exiting. Unable to receive message. Error: %v, type %T", err, err)
 			break
 		}
 		if klog.V(6) {
-			klog.Infof("messageListener for %v received messages %v", node.Name, string(bytes))
+			klog.Infof("messageListener for %v received messages %v", node.Name, string(buf))
 		}
 		var messageMap map[string]interface{}
-		err = json.Unmarshal(bytes, &messageMap)
+		err = json.Unmarshal(buf, &messageMap)
 		if err != nil {
 			klog.Errorf("Unable to unarmshal message from node %v", node.Name)
 			continue
@@ -263,7 +264,7 @@ func messageListener(provider MessageProvider, node *EventNode ) {
 		if err != nil {
 			klog.Errorf("Error processing message from destination %v. Message: %v, Error: %v", node.Name, messageMap, err)
 		} else if klog.V(6) {
-			klog.Infof("Finished processing message for  %v", node.Name )
+			klog.Infof("Finished processing message for  %v", node.Name)
 		}
 	}
 }
@@ -288,51 +289,50 @@ func (tp *triggerProcessor) startListeners(providers *EventDefinition) error {
 	return nil
 }
 
-
-/* Helper to fetch parameters of trigger object 
-  input 
+/* Helper to fetch parameters of trigger object
+  input
 	 tringger: the object containing trigger definition
 	 output:
 	   eventSource: []string
 	   input: string
 	   body: []interface{}
 */
-func parseTrigger(trigger map[interface{}]interface{}) ( []string, string, []interface{}, error) {
+func parseTrigger(trigger map[interface{}]interface{}) ([]string, string, []interface{}, error) {
 	eventSourceArray := make([]string, 0)
-	eventSourceObj, ok  := trigger[EVENTSOURCE]
+	eventSourceObj, ok := trigger[EVENTSOURCE]
 	if !ok {
-		return eventSourceArray, "",  nil, fmt.Errorf("trigger object %v does not containt eventSource", trigger)
+		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v does not containt eventSource", trigger)
 	}
 	eventSource, ok := eventSourceObj.(string)
 	if !ok {
-		return eventSourceArray, "",  nil, fmt.Errorf("trigger object %v eventSoruce if not a string but a %T", eventSource, eventSourceObj)
+		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v eventSoruce if not a string but a %T", eventSource, eventSourceObj)
 
 	}
-	eventSourceArray = append(eventSourceArray,  eventSource)
+	eventSourceArray = append(eventSourceArray, eventSource)
 
 	inputObj, ok := trigger[INPUT]
 	if !ok {
-		return eventSourceArray, "",  nil, fmt.Errorf("trigger object %v does not containt input", trigger)
+		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v does not containt input", trigger)
 	}
 	input, ok := inputObj.(string)
 	if !ok {
-		return eventSourceArray, "",  nil, fmt.Errorf("trigger object %v input not string but %T", eventSource, inputObj)
+		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v input not string but %T", eventSource, inputObj)
 
 	}
 
 	bodyObj, ok := trigger[BODY]
 	if !ok {
-		return eventSourceArray, "",  nil, fmt.Errorf("trigger object %v does not containt body", trigger)
+		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v does not containt body", trigger)
 	}
 	body, ok := bodyObj.([]interface{})
 	if !ok {
-		return eventSourceArray, "",  nil, fmt.Errorf("trigger object %v body not []interface{} but %T", eventSource, bodyObj)
+		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v body not []interface{} but %T", eventSource, bodyObj)
 
 	}
 	return eventSourceArray, input, body, nil
 }
 
-func (tp *triggerProcessor) processMessage(message map[string]interface{}, eventSource string ) ([]map[string]interface{}, error) {
+func (tp *triggerProcessor) processMessage(message map[string]interface{}, eventSource string) ([]map[string]interface{}, error) {
 	if klog.V(5) {
 		klog.Infof("Entering triggerProcessor.processMessage. message: %v, eventSource: %v", message, eventSource)
 		defer klog.Infof("Leaving triggerProcessor.processMessage")
@@ -363,7 +363,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 			klog.Infof("processMessage after parseTrigger: eventSources: %v", eventSources)
 		}
 
-		env, variables, err := initializeCELEnv( message, inputVariable)
+		env, variables, err := initializeCELEnv(message, inputVariable)
 		if err != nil {
 			return nil, err
 		}
@@ -371,9 +371,8 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 			klog.Infof("processMessage after initializeCELEnv")
 		}
 
-
 		depth := 1
-		_,  err = evalArrayObject(env, variables, bodyArray, depth)
+		_, err = evalArrayObject(env, variables, bodyArray, depth)
 		if err != nil {
 			klog.Errorf("Error evaluating trigger %v: ERROR MESSAGE: %v", trigger, err)
 			return nil, err
@@ -395,64 +394,64 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 	 cel.Env: updated execution environment
 	 error: any error
 */
-func evalArrayObject(env cel.Env, variables map[string]interface{}, bodyArray []interface{}, depth int) (cel.Env, error ) {
+func evalArrayObject(env cel.Env, variables map[string]interface{}, bodyArray []interface{}, depth int) (cel.Env, error) {
 
 	var err error
-	for _, objectObj := range(bodyArray) {
-		object, ok := objectObj.(map[interface{}] interface{})
+	for _, objectObj := range bodyArray {
+		object, ok := objectObj.(map[interface{}]interface{})
 		if !ok {
 			return env, fmt.Errorf("body object %v not map[interface{}]interface{}, but of type %T", objectObj, objectObj)
 		}
 		numKeywords, flags := countKeywords(object)
 		switch {
-			case (flags & IfFlag) != 0 :
-				/* If statement, only allow If or If and BODY */
-				env, _, err := evalIfWithSyntaxCheck(env, variables, object, numKeywords, flags, depth)
-				if err != nil {
-					return env, err
-				}
-				continue
-			case (flags & SwitchFlag) != 0 :
-				if numKeywords > 1 {
-					err = fmt.Errorf("switch contains more than one keyword: %v", object)
-					return env, err
-				}
-				if len(object) > 1 {
-					err = fmt.Errorf("switch also contains assignment: %v", object)
-					return env, err
-				}
-				env, err := evalSwitch(env, variables, object, numKeywords, flags, depth)
-				if err != nil {
-					return env, err
-				}
-				continue
-			case (flags & BodyFlag) != 0 :
-				/* evaluate body */
-				if numKeywords > 1 {
-					err = fmt.Errorf("body contains more than one keyword: %v", object)
-					return env, err
-				}
-				if len(object) > 1 {
-					err = fmt.Errorf("body also contains assignment: %v", object)
-					return env, err
-				}
-				env, err := evalBody(env, variables, object, numKeywords, flags, depth)
-				if err != nil {
-					return env, err
-				}
-				continue
-			case (flags & DefaultFlag) != 0 :
-				return env, fmt.Errorf("unexpected keyword default outside of a swtich: %v", objectObj)
-			default:
-				/* just plain assignment */
-				if len(object) > 1 {
-					err = fmt.Errorf("Multiple assignments in one object: %v", object)
-					return env, err
-				}
-				env, err = evalAssignment(env, variables, object, numKeywords, flags, depth )
-				if err != nil {
-					return env, err
-				}
+		case (flags & IfFlag) != 0:
+			/* If statement, only allow If or If and BODY */
+			env, _, err := evalIfWithSyntaxCheck(env, variables, object, numKeywords, flags, depth)
+			if err != nil {
+				return env, err
+			}
+			continue
+		case (flags & SwitchFlag) != 0:
+			if numKeywords > 1 {
+				err = fmt.Errorf("switch contains more than one keyword: %v", object)
+				return env, err
+			}
+			if len(object) > 1 {
+				err = fmt.Errorf("switch also contains assignment: %v", object)
+				return env, err
+			}
+			env, err := evalSwitch(env, variables, object, numKeywords, flags, depth)
+			if err != nil {
+				return env, err
+			}
+			continue
+		case (flags & BodyFlag) != 0:
+			/* evaluate body */
+			if numKeywords > 1 {
+				err = fmt.Errorf("body contains more than one keyword: %v", object)
+				return env, err
+			}
+			if len(object) > 1 {
+				err = fmt.Errorf("body also contains assignment: %v", object)
+				return env, err
+			}
+			env, err := evalBody(env, variables, object, numKeywords, flags, depth)
+			if err != nil {
+				return env, err
+			}
+			continue
+		case (flags & DefaultFlag) != 0:
+			return env, fmt.Errorf("unexpected keyword default outside of a swtich: %v", objectObj)
+		default:
+			/* just plain assignment */
+			if len(object) > 1 {
+				err = fmt.Errorf("multiple assignments in one object: %v", object)
+				return env, err
+			}
+			env, err = evalAssignment(env, variables, object, numKeywords, flags, depth)
+			if err != nil {
+				return env, err
+			}
 		}
 	}
 	return env, nil
@@ -465,7 +464,7 @@ func evalAssignment(env cel.Env, variables map[string]interface{}, object map[in
 	}
 	var err error
 	for variableNameObj, valObj := range object {
-		if klog.V(6){
+		if klog.V(6) {
 			klog.Infof("processing name: %v, type %T, object: %v, type %T", variableNameObj, variableNameObj, valObj, valObj)
 		}
 		variableName, ok := variableNameObj.(string)
@@ -479,24 +478,24 @@ func evalAssignment(env cel.Env, variables map[string]interface{}, object map[in
 		/* Format value as string for CEL parsing */
 		var val string
 		switch valObj.(type) {
-			case int:
-				val = fmt.Sprintf("%v", valObj)
-			case int64:
-				val = fmt.Sprintf("%v", valObj)
-			case int32:
-				val = fmt.Sprintf("%v", valObj)
-			case float32:
-				val = fmt.Sprintf("%v", valObj)
-			case float64:
-				val = fmt.Sprintf("%v", valObj)
-			case bool:
-				val = fmt.Sprintf("%v", valObj)
-			case string:
-				val = valObj.(string)
-			default:
-				return env, fmt.Errorf("Value of variables not stored as  YAML primitive types or string when assgining %v to %v. Type of value is %T", variableName, valObj, valObj)
+		case int:
+			val = fmt.Sprintf("%v", valObj)
+		case int64:
+			val = fmt.Sprintf("%v", valObj)
+		case int32:
+			val = fmt.Sprintf("%v", valObj)
+		case float32:
+			val = fmt.Sprintf("%v", valObj)
+		case float64:
+			val = fmt.Sprintf("%v", valObj)
+		case bool:
+			val = fmt.Sprintf("%v", valObj)
+		case string:
+			val = valObj.(string)
+		default:
+			return env, fmt.Errorf("Value of variables not stored as  YAML primitive types or string when assgining %v to %v. Type of value is %T", variableName, valObj, valObj)
 		}
-        env, err = setOneVariable(env, variableName, val, variables ) 
+		env, err = setOneVariable(env, variableName, val, variables)
 		if err != nil {
 			return env, err
 		}
@@ -505,15 +504,15 @@ func evalAssignment(env cel.Env, variables map[string]interface{}, object map[in
 }
 
 /*
- * Evaluate body 
+ * Evaluate body
  */
 func evalBody(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeyword int, flags uint, depth int) (cel.Env, error) {
 	/* check if recursive body exists */
 	nestedBodyObj := object[BODY]
 	nestedBody, ok := nestedBodyObj.([]interface{})
 	if ok {
-		return evalArrayObject(env, variables, nestedBody, depth );
-	} 
+		return evalArrayObject(env, variables, nestedBody, depth)
+	}
 
 	err := fmt.Errorf("body %v contains nested body that is not []interface, but of type %T", nestedBodyObj, nestedBody)
 	return env, err
@@ -527,7 +526,7 @@ func evalIfWithSyntaxCheck(env cel.Env, variables map[string]interface{}, object
 		err := fmt.Errorf("body of if %v contains more than two keyword", object)
 		return env, false, err
 	}
-	if numKeywords == 2 && (flags & BodyFlag) == 0  && (flags & SwitchFlag) == 0  {
+	if numKeywords == 2 && (flags&BodyFlag) == 0 && (flags&SwitchFlag) == 0 {
 		/* second keyword is not body or switch */
 		err := fmt.Errorf("if object also contains keywords other than body or switch: %v", object)
 		return env, false, err
@@ -539,7 +538,7 @@ func evalIfWithSyntaxCheck(env cel.Env, variables map[string]interface{}, object
 
 	conditionObj := object[IF]
 	condition, ok := conditionObj.(string)
-	if ( !ok ) {
+	if !ok {
 		return env, false, fmt.Errorf("condition of if object not a string: %v", object)
 	}
 	boolVal, err := evalCondition(env, condition, variables)
@@ -562,24 +561,24 @@ func evalIfWithSyntaxCheck(env cel.Env, variables map[string]interface{}, object
 	if ok {
 		/* if statement also contains body */
 		env, err = evalBody(env, variables, object, numKeywords, flags, depth)
-		return env,  true, err
-	} 
+		return env, true, err
+	}
 
 	_, ok = object[SWITCH]
 	if ok {
 		/* if statement also contains switch */
 		env, err = evalSwitch(env, variables, object, numKeywords, flags, depth)
-		return env,  true, err
-	} 
+		return env, true, err
+	}
 
 	/* perform assignments */
-	env, err = evalAssignment(env, variables, object,  numKeywords, flags, depth)
+	env, err = evalAssignment(env, variables, object, numKeywords, flags, depth)
 	return env, true, err
 }
 
 func evalSwitch(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeywords int, flags uint, depth int) (cel.Env, error) {
 	var err error
-	switchObj, ok :=  object[SWITCH]
+	switchObj, ok := object[SWITCH]
 	if !ok {
 		return env, fmt.Errorf("Expecting switch statement: %v ", switchObj)
 	}
@@ -589,7 +588,7 @@ func evalSwitch(env cel.Env, variables map[string]interface{}, object map[interf
 
 	}
 	var defaultArray []interface{} = nil
-	for _ , arrayElementObj := range switchArray {
+	for _, arrayElementObj := range switchArray {
 		arrayElement, ok := arrayElementObj.(map[interface{}]interface{})
 		if !ok {
 			return env, fmt.Errorf("body component of switch not object: %v ", arrayElementObj)
@@ -603,7 +602,7 @@ func evalSwitch(env cel.Env, variables map[string]interface{}, object map[interf
 				return env, err
 			}
 			continue
-		} 
+		}
 		defaultObj, defaultOK := arrayElement[DEFAULT]
 		if defaultOK {
 			if len(arrayElement) > 1 {
@@ -612,7 +611,7 @@ func evalSwitch(env cel.Env, variables map[string]interface{}, object map[interf
 			if defaultArray != nil {
 				return env, fmt.Errorf("Only one default statement supported.  Extra default statement: %v", arrayElement)
 			}
-			defaultArray, ok  = defaultObj.([]interface{})
+			defaultArray, ok = defaultObj.([]interface{})
 			if !ok {
 				return env, fmt.Errorf("content of default not []interface{}: %v, type: %T", defaultObj, defaultObj)
 
@@ -621,11 +620,11 @@ func evalSwitch(env cel.Env, variables map[string]interface{}, object map[interf
 		}
 		/* Unsupported keyword, or assignment */
 		return env, fmt.Errorf("switch statement must contain if or default statements, but found: %v, type %T", arrayElement, arrayElement)
-		
+
 	}
 	/* evaluate defaults */
 
-	if defaultArray != nil  {
+	if defaultArray != nil {
 		env, err = evalArrayObject(env, variables, defaultArray, depth)
 		if err != nil {
 			return env, err
@@ -633,7 +632,6 @@ func evalSwitch(env cel.Env, variables map[string]interface{}, object map[interf
 	}
 	return env, nil
 }
-
 
 /* Shallow copy a map */
 func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
@@ -644,22 +642,21 @@ func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
 	return newMap
 }
 
-
-/* Get initial CEL environment 
-*/
+/* Get initial CEL environment
+ */
 func initializeEmptyCELEnv() (cel.Env, error) {
 	/* initialize empty CEL environment with additional functions */
 	additionalFuncs := getAdditionalCELFuncDecls()
-//	klog.Infof("Additional Func Decls: %v", additionalFuncs)
-	return cel.NewEnv(additionalFuncs )
+	//	klog.Infof("Additional Func Decls: %v", additionalFuncs)
+	return cel.NewEnv(additionalFuncs)
 }
 
 /* Get initial CEL environment
-	Return: cel.Env: the CEL environment
-		map[string]interface{}: variables used during substitution
-		error: any error encountered
- */
-func initializeCELEnv(message map[string]interface{}, inputVariableName string) (cel.Env, map[string]interface{},  error) {
+Return: cel.Env: the CEL environment
+	map[string]interface{}: variables used during substitution
+	error: any error encountered
+*/
+func initializeCELEnv(message map[string]interface{}, inputVariableName string) (cel.Env, map[string]interface{}, error) {
 	if klog.V(5) {
 		klog.Infof("entering initializeCELEnv")
 		defer klog.Infof("Leaving initializeCELEnv")
@@ -668,33 +665,32 @@ func initializeCELEnv(message map[string]interface{}, inputVariableName string) 
 	/* initialize empty CEL environment with additional functions */
 	env, err := initializeEmptyCELEnv()
 	if err != nil {
-		return nil, nil,  err
+		return nil, nil, err
 	}
 
 	variables := make(map[string]interface{})
 	ident := decls.NewIdent(inputVariableName, decls.NewMapType(decls.String, decls.Any), nil)
 	env, err = env.Extend(cel.Declarations(ident))
 	if err != nil {
-		return nil, nil,  err
+		return nil, nil, err
 	}
 	/* Add message as a new variable */
 	variables[inputVariableName] = message
 
-	return env, variables,  nil
+	return env, variables, nil
 }
-
 
 func setOneVariable(env cel.Env, name string, val string, variables map[string]interface{}) (cel.Env, error) {
 	if name == "" {
 		/* name not set */
 		return env, nil
 	}
-	
+
 	val = strings.Trim(val, " ")
 
 	parsed, issues := env.Parse(val)
 	if issues != nil && issues.Err() != nil {
-		return env, fmt.Errorf("Parsing error setting variable %s to %s, error: %v", name, val, issues.Err())
+		return env, fmt.Errorf("parsing error setting variable %s to %s, error: %v", name, val, issues.Err())
 	}
 	checked, issues := env.Check(parsed)
 	if issues != nil && issues.Err() != nil {
@@ -718,9 +714,8 @@ func setOneVariable(env cel.Env, name string, val string, variables map[string]i
 	return env, err
 }
 
-
 func createOneVariable(env cel.Env, entireName string, val string, out ref.Val, variables map[string]interface{}) (cel.Env, error) {
-	if klog.V(6){
+	if klog.V(6) {
 		klog.Infof("Entering createOneVariables: setting %v to %v", entireName, val)
 		defer klog.Infof("Levaning createOneVariables: setting %v to %v", entireName, val)
 	}
@@ -728,7 +723,7 @@ func createOneVariable(env cel.Env, entireName string, val string, out ref.Val, 
 	arrayLen := len(nameArray)
 	tempMap := variables
 	var err error
-	for index:= 0;  index < arrayLen-1; index++ {
+	for index := 0; index < arrayLen-1; index++ {
 		componentName := nameArray[index]
 		entry, ok := tempMap[componentName]
 		if !ok {
@@ -738,7 +733,7 @@ func createOneVariable(env cel.Env, entireName string, val string, out ref.Val, 
 				ident := decls.NewIdent(componentName, decls.NewMapType(decls.String, decls.Any), nil)
 				env, err = env.Extend(cel.Declarations(ident))
 				if err != nil {
-					return  env, err
+					return env, err
 				}
 			}
 			newMap := make(map[string]interface{})
@@ -747,15 +742,15 @@ func createOneVariable(env cel.Env, entireName string, val string, out ref.Val, 
 		} else {
 			/* entry already exists */
 			entryMap, ok := entry.(map[string]interface{})
-			if ! ok {
-				return env, fmt.Errorf("unable to set %s to %s: the component name %s already exists but is not a map", entireName, val, componentName) 
+			if !ok {
+				return env, fmt.Errorf("unable to set %s to %s: the component name %s already exists but is not a map", entireName, val, componentName)
 			}
 			tempMap = entryMap
 		}
 	}
 	lastComponent := nameArray[arrayLen-1]
 	/* If we get here, tempMap is a map that we can directly insert the value */
-    env, err = createOneVariableHelper(env, entireName, lastComponent,  val, out, tempMap, arrayLen == 1)
+	env, err = createOneVariableHelper(env, entireName, lastComponent, val, out, tempMap, arrayLen == 1)
 	return env, err
 }
 
@@ -770,7 +765,7 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 	case TYPEINT:
 		var intval int64
 		if intval, ok = out.Value().(int64); !ok {
-			return env, fmt.Errorf("Unable to cast variable %s, value %s into int64", entireName, val)
+			return env, fmt.Errorf("unable to cast variable %s, value %s into int64", entireName, val)
 		}
 		if createNewIdent {
 			ident := decls.NewIdent(name, decls.Int, nil)
@@ -784,24 +779,24 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 			klog.Infof("variable %s set to %v", entireName, intval)
 		}
 		/*
-		floatval := float64(intval)
+			floatval := float64(intval)
 
-		if createNewIdent {
-			ident := decls.NewIdent(name, decls.Double, nil)
-			env, err = env.Extend(cel.Declarations(ident))
-			if err != nil {
-				return env, err
+			if createNewIdent {
+				ident := decls.NewIdent(name, decls.Double, nil)
+				env, err = env.Extend(cel.Declarations(ident))
+				if err != nil {
+					return env, err
+				}
 			}
-		}
-		variables[name] = floatval
-		if klog.V(4) {
-			klog.Infof("variable %s set to %v", entireName, floatval)
-		}
+			variables[name] = floatval
+			if klog.V(4) {
+				klog.Infof("variable %s set to %v", entireName, floatval)
+			}
 		*/
 	case TYPEBOOL:
-		boolval, ok := out.Value().(bool);
-		if ! ok {
-			return env, fmt.Errorf("Unable to cast variable %s, value %s into bool", entireName, val)
+		boolval, ok := out.Value().(bool)
+		if !ok {
+			return env, fmt.Errorf("unable to cast variable %s, value %s into bool", entireName, val)
 		}
 
 		if createNewIdent {
@@ -818,7 +813,7 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 	case TYPEDOUBLE:
 		floatvar, ok := out.Value().(float64)
 		if !ok {
-			return env, fmt.Errorf("Unable to cast variable %s, value %s into float64", entireName, val)
+			return env, fmt.Errorf("unable to cast variable %s, value %s into float64", entireName, val)
 		}
 
 		if createNewIdent {
@@ -828,14 +823,14 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 				return env, err
 			}
 		}
-		variables[name]  = floatvar
+		variables[name] = floatvar
 		if klog.V(4) {
 			klog.Infof("variable %s set to %v", entireName, floatvar)
 		}
 	case TYPESTRING:
 		stringval, ok := out.Value().(string)
 		if !ok {
-			return env, fmt.Errorf("Unable to cast variable %s, value %s into string", entireName, val)
+			return env, fmt.Errorf("unable to cast variable %s, value %s into string", entireName, val)
 		}
 
 		if createNewIdent {
@@ -851,15 +846,15 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 		}
 	case TYPELIST:
 		/*
-		switch out.Value().(type) {
-		case []ref.Val:
-		case []interface{}:
-		case []string:
-		case []int64:
-		case []float64:
-		default:
-			return  env, fmt.Errorf("Unable to cast variable %s, value %s into %T", entireName, val, out.Value())
-		}
+			switch out.Value().(type) {
+			case []ref.Val:
+			case []interface{}:
+			case []string:
+			case []int64:
+			case []float64:
+			default:
+				return  env, fmt.Errorf("Unable to cast variable %s, value %s into %T", entireName, val, out.Value())
+			}
 		*/
 		if createNewIdent {
 			ident := decls.NewIdent(name, decls.NewListType(decls.Any), nil)
@@ -868,7 +863,7 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 				return env, err
 			}
 		}
-		var listval interface{} = out.Value()
+		var listval = out.Value()
 		variables[name] = listval
 		if klog.V(4) {
 			klog.Infof("variable %s set to %v", entireName, listval)
@@ -878,14 +873,14 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 		valueVal := reflect.ValueOf(outValue)
 		valueValType := valueVal.Type()
 		valueValKind := valueValType.Kind()
-		if valueValKind != reflect.Map  {
-				return env, fmt.Errorf("Unable to cast variable %s, value %s, evaluaed value %v, type %T into map", entireName, val, outValue, outValue)
+		if valueValKind != reflect.Map {
+			return env, fmt.Errorf("unable to cast variable %s, value %s, evaluaed value %v, type %T into map", entireName, val, outValue, outValue)
 		}
 		if createNewIdent {
 			ident := decls.NewIdent(name, decls.NewMapType(decls.String, decls.Any), nil)
 			env, err = env.Extend(cel.Declarations(ident))
 			if err != nil {
-				return  env, err
+				return env, err
 			}
 		}
 		variables[name] = outValue
@@ -895,7 +890,7 @@ func createOneVariableHelper(env cel.Env, entireName string, name string, val st
 	default:
 		if createNewIdent {
 			/* don't have a usable type to create new top level variable  */
-			return env, fmt.Errorf("In function setOneVariable: Unable to process variable name: %s, value: %s, type %s", entireName, val, out.Type().TypeName())
+			return env, fmt.Errorf("in function setOneVariable: Unable to process variable name: %s, value: %s, type %s", entireName, val, out.Type().TypeName())
 		}
 		/* If not creating a new identifier, try to use the value as is. TODO: Should we just use out? */
 		variables[name] = out.Value()
@@ -972,14 +967,14 @@ func readTriggerDefinition(fileName string, td *eventTriggerDefinition) error {
 		klog.Infof("enter readTriggerDefinitions %v", fileName)
 		defer klog.Infof("Leaving readTriggerDefinitions %v", fileName)
 	}
-	bytes, err := ioutil.ReadFile(fileName)
+	buf, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		return err
 	}
 
 	yamlMap := make(map[string]interface{})
-	err = yaml.Unmarshal(bytes, yamlMap)
-	if err != nil  {
+	err = yaml.Unmarshal(buf, yamlMap)
+	if err != nil {
 		return fmt.Errorf("unable to marshal %v. Error: %v", fileName, err)
 	}
 
@@ -1002,7 +997,7 @@ func readTriggerDefinition(fileName string, td *eventTriggerDefinition) error {
 		}
 		eventTriggersArray, ok := eventTriggersObj.([]interface{})
 		if ok {
-			for _, triggerMapObj := range(eventTriggersArray) {
+			for _, triggerMapObj := range eventTriggersArray {
 				triggerMap, ok := triggerMapObj.(map[interface{}]interface{})
 				if !ok {
 					return fmt.Errorf("triggerMapObj %v not type map[interface{}]interface{}, but type %T", triggerMapObj, triggerMapObj)
@@ -1032,8 +1027,8 @@ func readTriggerDefinition(fileName string, td *eventTriggerDefinition) error {
 	if ok {
 		functionsArray, ok := functionsObj.([]interface{})
 		if ok {
-			for _, functionMapObj := range(functionsArray) {
-				functionMap, ok := functionMapObj.(map[interface{}] interface{})
+			for _, functionMapObj := range functionsArray {
+				functionMap, ok := functionMapObj.(map[interface{}]interface{})
 				if !ok {
 					if klog.V(5) {
 						klog.Infof("functionMap %v not of type map[interface{}]interface{}, but is type %T", functionMapObj, functionMapObj)
@@ -1052,7 +1047,7 @@ func readTriggerDefinition(fileName string, td *eventTriggerDefinition) error {
 						_, ok = inputObj.(string)
 						if !ok {
 							return fmt.Errorf("function input %v not a string: %v", name, inputObj)
-						} 
+						}
 
 						outputObj, ok := functionMap[OUTPUT]
 						if !ok {
@@ -1074,7 +1069,7 @@ func readTriggerDefinition(fileName string, td *eventTriggerDefinition) error {
 		} else {
 			return fmt.Errorf("functionsArray %v not of type []interface{}, but type %T", functionsArray, functionsArray)
 		}
-	} 
+	}
 
 	return nil
 }
@@ -1101,26 +1096,26 @@ func evalCondition(env cel.Env, when string, variables map[string]interface{}) (
 	}
 	parsed, issues := env.Parse(when)
 	if issues != nil && issues.Err() != nil {
-		return false, fmt.Errorf("Error evaluating condition %s, error: %v", when, issues.Err())
+		return false, fmt.Errorf("error evaluating condition %s, error: %v", when, issues.Err())
 	}
 	checked, issues := env.Check(parsed)
 	if issues != nil && issues.Err() != nil {
-		return false, fmt.Errorf("Error parsing condition %s, error: %v", when, issues.Err())
+		return false, fmt.Errorf("error parsing condition %s, error: %v", when, issues.Err())
 	}
 	prg, err := env.Program(checked, getAdditionalCELFuncs())
 	if err != nil {
-		return false, fmt.Errorf("Error creating CEL program for condition %s, error: %v", when, err)
+		return false, fmt.Errorf("error creating CEL program for condition %s, error: %v", when, err)
 	}
 	// out, details, err := prg.Eval(variables)
 	out, _, err := prg.Eval(variables)
 	if err != nil {
-		return false, fmt.Errorf("Error evaluating condition %s, error: %v", when, err)
+		return false, fmt.Errorf("error evaluating condition %s, error: %v", when, err)
 	}
 
 	var boolVal bool
 	var ok bool
 	if boolVal, ok = out.Value().(bool); !ok {
-		return false, fmt.Errorf("The when expression %s does not evaluate to a bool. Instead it is of type %T", when, out.Value())
+		return false, fmt.Errorf("the when expression %s does not evaluate to a bool. Instead it is of type %T", when, out.Value())
 	}
 	return boolVal, nil
 }
@@ -1159,11 +1154,11 @@ func evalCondition(env cel.Env, when string, variables map[string]interface{}) (
 //}
 
 func substituteTemplateFile(fileName string, variables interface{}) (string, error) {
-	bytes, err := ioutil.ReadFile(fileName)
+	buf, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		return "", err
 	}
-	str := string(bytes)
+	str := string(buf)
 	klog.Infof("Before template substitution for %s: %s, variables type: %T", fileName, str, variables)
 	substituted, err := substituteTemplate(str, variables)
 	if err != nil {
@@ -1196,7 +1191,7 @@ func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
 	/* Convert yaml to unstructured*/
 	resourceBytes, err := k8syaml.ToJSON([]byte(resourceStr))
 	if err != nil {
-		return fmt.Errorf("Unable to convert yaml resource to JSON: %v", resourceStr)
+		return fmt.Errorf("unable to convert yaml resource to JSON: %v", resourceStr)
 	}
 	var unstructuredObj = &unstructured.Unstructured{}
 	err = unstructuredObj.UnmarshalJSON(resourceBytes)
@@ -1212,16 +1207,16 @@ func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
 
 	/* add label kabanero.io/jobld = <jobid> */
 	/*
-	err = setJobID(unstructuredObj, jobid)
-	if err != nil {
-		return err
-	}
+		err = setJobID(unstructuredObj, jobid)
+		if err != nil {
+			return err
+		}
 	*/
 
 	if klog.V(5) {
 		klog.Infof("Resources before creating : %v", unstructuredObj)
 	}
-	 gvr := schema.GroupVersionResource{group, version, resource}
+	gvr := schema.GroupVersionResource{group, version, resource}
 	if err == nil {
 		var intfNoNS = dynamicClient.Resource(gvr)
 		var intf dynamic.ResourceInterface
@@ -1234,7 +1229,7 @@ func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
 		}
 	} else {
 		klog.Errorf("Unable to create resource /%s.  Error: %s", resourceStr, err)
-		return fmt.Errorf("Unable to get GVR for resource %s, error: %s", resourceStr, err)
+		return fmt.Errorf("unable to get GVR for resource %s, error: %s", resourceStr, err)
 	}
 	if klog.V(2) {
 		klog.Infof("Created resource %s/%s", namespace, name)
@@ -1246,12 +1241,12 @@ func setJobID(unstructuredObj *unstructured.Unstructured, jobid string) error {
 	var objMap = unstructuredObj.Object
 	metadataObj, ok := objMap[METADATA]
 	if !ok {
-		return fmt.Errorf("Resource has no metadata: %v", unstructuredObj)
+		return fmt.Errorf("resource has no metadata: %v", unstructuredObj)
 	}
 	var metadata map[string]interface{}
 	metadata, ok = metadataObj.(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("Resource metadata is not a map: %v", unstructuredObj)
+		return fmt.Errorf("resource metadata is not a map: %v", unstructuredObj)
 	}
 
 	labelsObj, ok := metadata[LABELS]
@@ -1263,25 +1258,24 @@ func setJobID(unstructuredObj *unstructured.Unstructured, jobid string) error {
 	} else {
 		labels, ok = labelsObj.(map[string]interface{})
 		if !ok {
-			return fmt.Errorf("Resource labels is not a map: %v", labels)
+			return fmt.Errorf("resource labels is not a map: %v", labels)
 		}
 	}
 	labels["kabanero.io/jobid"] = jobid
-	
+
 	return nil
 }
-
 
 /* Return GVR, namespace, name, ok */
 func getGroupVersionResourceNamespaceName(unstructuredObj *unstructured.Unstructured) (string, string, string, string, string, error) {
 	var objMap = unstructuredObj.Object
 	apiVersionObj, ok := objMap[APIVERSION]
 	if !ok {
-		return "", "", "", "", "", fmt.Errorf("Resource has does not contain apiVersion: %s", unstructuredObj)
+		return "", "", "", "", "", fmt.Errorf("resource has does not contain apiVersion: %s", unstructuredObj)
 	}
 	apiVersion, ok := apiVersionObj.(string)
 	if !ok {
-		return "", "", "", "", "", fmt.Errorf("Resource apiVersion not a string: %s", unstructuredObj)
+		return "", "", "", "", "", fmt.Errorf("resource apiVersion not a string: %s", unstructuredObj)
 	}
 
 	components := strings.Split(apiVersion, "/")
@@ -1293,45 +1287,45 @@ func getGroupVersionResourceNamespaceName(unstructuredObj *unstructured.Unstruct
 		group = components[0]
 		version = components[1]
 	} else {
-		return "", "", "", "", "", fmt.Errorf("Resource has invalid group/version: %s, resource: %s", apiVersion, unstructuredObj)
+		return "", "", "", "", "", fmt.Errorf("resource has invalid group/version: %s, resource: %s", apiVersion, unstructuredObj)
 	}
 
 	kindObj, ok := objMap[KIND]
 	if !ok {
-		return "", "", "", "", "", fmt.Errorf("Resource has invalid kind: %s", unstructuredObj)
+		return "", "", "", "", "", fmt.Errorf("resource has invalid kind: %s", unstructuredObj)
 	}
 	kind, ok := kindObj.(string)
 	if !ok {
-		return "", "", "", "", "", fmt.Errorf("Resource kind not a string: %s", unstructuredObj)
+		return "", "", "", "", "", fmt.Errorf("resource kind not a string: %s", unstructuredObj)
 	}
 	resource := kindToPlural(kind)
 
 	metadataObj, ok := objMap[METADATA]
 	var metadata map[string]interface{}
 	if !ok {
-		return "", "", "", "", "", fmt.Errorf("Resource has no metadata: %s", unstructuredObj)
+		return "", "", "", "", "", fmt.Errorf("resource has no metadata: %s", unstructuredObj)
 	}
 	metadata, ok = metadataObj.(map[string]interface{})
 	if !ok {
-		return "", "", "", "", "", fmt.Errorf("Resource metadata is not a map: %s", unstructuredObj)
+		return "", "", "", "", "", fmt.Errorf("resource metadata is not a map: %s", unstructuredObj)
 	}
 
 	nameObj, ok := metadata[NAME]
 	if !ok {
-		return "", "", "", "", "", fmt.Errorf("Resource has no name: %s", unstructuredObj)
+		return "", "", "", "", "", fmt.Errorf("resource has no name: %s", unstructuredObj)
 	}
 	name, ok := nameObj.(string)
 	if !ok {
-		return "", "", "", "", "", fmt.Errorf("Resource name not a string: %s", unstructuredObj)
+		return "", "", "", "", "", fmt.Errorf("resource name not a string: %s", unstructuredObj)
 	}
 
 	nsObj, ok := metadata[NAMESPACE]
 	if !ok {
-		return "", "", "", "", "", fmt.Errorf("Resource has no namespace: %s", unstructuredObj)
+		return "", "", "", "", "", fmt.Errorf("resource has no namespace: %s", unstructuredObj)
 	}
 	namespace, ok := nsObj.(string)
 	if !ok {
-		return "", "", "", "", "", fmt.Errorf("Resource namespace not a string: %s", unstructuredObj)
+		return "", "", "", "", "", fmt.Errorf("resource namespace not a string: %s", unstructuredObj)
 	}
 	return group, version, resource, namespace, name, nil
 }
@@ -1348,9 +1342,10 @@ func kindToPlural(kind string) string {
 }
 
 /* tracking time for timestamp */
-var lastTime time.Time = time.Now().UTC()
+var lastTime = time.Now().UTC()
 var mutex = &sync.Mutex{}
-/* 
+
+/*
 Get timestamp. Timestamp format is UTC time expressed as:
       YYYYMMDDHHMMSSL, where L is last digits in multiples of 1/10 second.
 WARNING: This function may sleep up to 0.1 second per request if there are too many concurent requests
@@ -1361,13 +1356,13 @@ func getTimestamp() string {
 
 	now := time.Now().UTC()
 	for now.Sub(lastTime).Nanoseconds() < 100000000 {
-            // < 0.1 since last time. Sleep for at least 0.1 second
-            time.Sleep(time.Millisecond*time.Duration(100))
-            now = time.Now().UTC()
+		// < 0.1 since last time. Sleep for at least 0.1 second
+		time.Sleep(time.Millisecond * time.Duration(100))
+		now = time.Now().UTC()
 	}
 	lastTime = now
 
-	return fmt.Sprintf("%04d%02d%02d%02d%02d%02d%01d", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(),now.Second(), now.Nanosecond()/100000000)
+	return fmt.Sprintf("%04d%02d%02d%02d%02d%02d%01d", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/100000000)
 }
 
 /* implementation of toDomainName for CEL */
@@ -1376,7 +1371,7 @@ func toDomainNameCEL(param ref.Val) ref.Val {
 	if !ok {
 		return types.ValOrErr(param, "unexpected type '%v' passed to toDomainName", param.Type())
 	}
-	return types.String(toDomainName(string(str)))
+	return types.String(utils.ToDomainName(string(str)))
 }
 
 /* implementation of toLabel for CEL */
@@ -1385,11 +1380,11 @@ func toLabelCEL(param ref.Val) ref.Val {
 	if !ok {
 		return types.ValOrErr(param, "unexpected type '%v' passed to toLabel", param.Type())
 	}
-	return types.String(toLabel(string(str)))
+	return types.String(utils.ToLabel(string(str)))
 }
 
 /* implementation of split for CEL */
-func splitCEL(strVal ref.Val, sepVal ref.Val ) ref.Val {
+func splitCEL(strVal ref.Val, sepVal ref.Val) ref.Val {
 	str, ok := strVal.(types.String)
 	if !ok {
 		return types.ValOrErr(strVal, "unexpected type '%v' passed as first parameter to function split", strVal.Type())
@@ -1408,15 +1403,14 @@ func jobIDCEL(values ...ref.Val) ref.Val {
 	return types.String(getTimestamp())
 }
 
-
 /* Return next job ID */
 func kabaneroConfigCEL(values ...ref.Val) ref.Val {
-    ret := make(map[string]interface{})
+	ret := make(map[string]interface{})
 	ret[NAMESPACE] = webhookNamespace
 	return types.NewDynamicMap(types.DefaultTypeAdapter, ret)
 }
 
-/* implementation of downlodYAML for CEL. 
+/* implementation of downlodYAML for CEL.
    webhookMessage: map[string]interface{} contains the original webhook message
    fileNameVal: name of file to download
    Return: map[string] interface{} where
@@ -1428,7 +1422,7 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
 	klog.Infof("downloadYAMLCEL first param: %v, second param: %v", webhookMessage, fileNameVal)
 
 	if webhookMessage.Value() == nil {
-		return types.ValOrErr(webhookMessage, "unexpected null first parameter passed to function downloadYAML.") 
+		return types.ValOrErr(webhookMessage, "unexpected null first parameter passed to function downloadYAML.")
 	}
 	mapInst, ok := webhookMessage.Value().(map[string]interface{})
 	if !ok {
@@ -1440,7 +1434,7 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
 		return types.ValOrErr(webhookMessage, "Missing event parameter %v passed to downloadYAML.", webhookMessage)
 	}
 	var bodyMap map[string]interface{}
-	bodyMap, ok  = bodyMapObj.(map[string]interface{})
+	bodyMap, ok = bodyMapObj.(map[string]interface{})
 	if !ok {
 		return types.ValOrErr(webhookMessage, "Event parameter %v passed to downloadYAML not map[string]interface{}. Instead, it is %T.", webhookMessage, bodyMapObj)
 	}
@@ -1450,21 +1444,21 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
 		return types.ValOrErr(webhookMessage, "Missing header parameter %v passed to downloadYAML.", webhookMessage)
 	}
 	var headerMap map[string][]string
-    headerMap, err := convertToHeaderMap(headerMapObj)
-	if err != nil  {
+	headerMap, err := convertToHeaderMap(headerMapObj)
+	if err != nil {
 		return types.ValOrErr(webhookMessage, "Header %v passed to downloadYAML can not be converted to map[string][]string. Instead, it is %T. Conversion error: %v", headerMapObj, headerMapObj, err)
 	}
-	
+
 	if fileNameVal.Value() == nil {
-		return types.ValOrErr(fileNameVal, "unexpected null second parameter passed to function downloadYAML.") 
+		return types.ValOrErr(fileNameVal, "unexpected null second parameter passed to function downloadYAML.")
 	}
 	fileName, ok := fileNameVal.Value().(string)
 	if !ok {
 		return types.ValOrErr(fileNameVal, "unexpected type '%v' passed as first parameter to function downloadYAML. It should be string", fileNameVal.Type())
 	}
 
-	var ret map[string]interface{} = make(map[string]interface{})
-	fileContent, exists , err := downloadYAML(headerMap, bodyMap, fileName) 
+	var ret = make(map[string]interface{})
+	fileContent, exists, err := downloadYAML(headerMap, bodyMap, fileName)
 	ret["exists"] = exists
 	if err != nil {
 		ret["error"] = fmt.Sprintf("%v", err)
@@ -1480,8 +1474,7 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
 	return types.NewDynamicMap(types.DefaultTypeAdapter, ret)
 }
 
-
-/* implementation of call for CEL. 
+/* implementation of call for CEL.
    function string: name of function to call
    param map[string]interface{}: param to pass to function
    Return interface{} : result
@@ -1493,19 +1486,19 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 
 	if param.Value() == nil {
 		klog.Infof("callCEL param is nil")
-		return types.ValOrErr(param, "unexpected null second parameter passed to function call.") 
+		return types.ValOrErr(param, "unexpected null second parameter passed to function call.")
 	}
 	/*
-	paramMap, ok := param.Value().(map[string]interface{})
-	if !ok {
-		klog.Infof("callCEL param is not map[string]interface{}")
-		return types.ValOrErr(param, "unexpected type '%v' passed as second parameter to function call. It should be map[string]interface{}", param.Type())
-	}
+		paramMap, ok := param.Value().(map[string]interface{})
+		if !ok {
+			klog.Infof("callCEL param is not map[string]interface{}")
+			return types.ValOrErr(param, "unexpected type '%v' passed as second parameter to function call. It should be map[string]interface{}", param.Type())
+		}
 	*/
 
 	if functionVal.Value() == nil {
 		klog.Infof("callCEL function is nil")
-		return types.ValOrErr(functionVal, "unexpected null first parameter passed to function call.") 
+		return types.ValOrErr(functionVal, "unexpected null first parameter passed to function call.")
 	}
 	if klog.V(6) {
 		klog.Infof("callCEL first param type: %v, second param type: %v", functionVal.Type(), param.Type())
@@ -1548,7 +1541,7 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 		return types.ValOrErr(functionVal, "output variable of function %v not a string: %v", functionDecl, outputObj)
 	}
 
-	bodyArrayObj , ok := functionDecl[BODY]
+	bodyArrayObj, ok := functionDecl[BODY]
 	if !ok {
 		klog.Infof("callCEL function %v function body not found", function)
 		return types.ValOrErr(functionVal, "function %v does not a have a body", functionDecl)
@@ -1559,31 +1552,30 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 		return types.ValOrErr(functionVal, "body of function %v not not []interface{}", functionDecl)
 	}
 
-
 	variables := make(map[string]interface{})
-	env, err := initializeEmptyCELEnv() 
+	env, err := initializeEmptyCELEnv()
 	if err != nil {
 		klog.Infof("callCEL function %v Unable to initialize CEL environment", function)
 		return types.ValOrErr(functionVal, "callCEL Unable to initialize CEL environment. Error: %v ", err)
 	}
 
-	env, err = createOneVariable(env, input, "", param , variables)
+	env, err = createOneVariable(env, input, "", param, variables)
 	if err != nil {
 		klog.Infof("callCEL function %v unable to create input variable %v for %v", function, input, param)
 		return types.ValOrErr(param, "callCEL Unable to initialize CEL environment. Error: %v ", err)
 	}
 
 	depth := 1
-	_,  err = evalArrayObject(env, variables, bodyArray, depth)
+	_, err = evalArrayObject(env, variables, bodyArray, depth)
 	if err != nil {
 		klog.Infof("callCEL error: %v", err)
 		return types.ValOrErr(param, "callCEL error evaluating function body. Error: %v ", err)
-	} 
+	}
 	outValueObj, ok := variables[output]
 	if !ok {
 		klog.Errorf("callCEL error calling function %v: output variable %v not set", function, output)
 		return types.ValOrErr(types.NewDynamicMap(types.DefaultTypeAdapter, variables), "error calling function %v: output variable %v not set by function", function, output)
-	} 
+	}
 
 	ret, err := convertToRefVal(outValueObj)
 	if err != nil {
@@ -1593,15 +1585,15 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 }
 
 /* Convert a value to ref.Val
-*/
+ */
 func convertToRefVal(outValueObj interface{}) (ref.Val, error) {
 
 	outValueVal := reflect.ValueOf(outValueObj)
 	outValueType := outValueVal.Type()
 	outValueKind := outValueType.Kind()
 	if outValueKind == reflect.Map {
-		return  types.NewDynamicMap(types.DefaultTypeAdapter,outValueObj), nil
-	} else if outValueKind == reflect.Array || outValueKind ==  reflect.Slice {
+		return types.NewDynamicMap(types.DefaultTypeAdapter, outValueObj), nil
+	} else if outValueKind == reflect.Array || outValueKind == reflect.Slice {
 		return types.NewDynamicList(types.DefaultTypeAdapter, outValueObj), nil
 	}
 
@@ -1620,12 +1612,12 @@ func convertToRefVal(outValueObj interface{}) (ref.Val, error) {
 		ret = outValueObj.(ref.Val)
 	default:
 		ret = nil
-		err = fmt.Errorf("Unable to convert %v of type %T to ref.Val",  outValueObj, outValueObj)
+		err = fmt.Errorf("unable to convert %v of type %T to ref.Val", outValueObj, outValueObj)
 	}
 	return ret, err
 }
 
-/* implementation of call for applyResources. 
+/* implementation of call for applyResources.
    dir string: directory
    variable Any: variable to pass to go template
    Return string : empty if OK, otherwise, error message
@@ -1635,12 +1627,12 @@ func applyResourcesCEL(dir ref.Val, variables ref.Val) ref.Val {
 
 	if variables.Value() == nil {
 		klog.Infof("applyResourcesCEL variables is nil")
-		return types.ValOrErr(variables, "unexpected null second parameter passed to function applyResources.") 
+		return types.ValOrErr(variables, "unexpected null second parameter passed to function applyResources.")
 	}
 
 	if dir.Value() == nil {
 		klog.Infof("applyResourcesCEL directory is nil")
-		return types.ValOrErr(dir, "unexpected null first parameter passed to function applyResources.") 
+		return types.ValOrErr(dir, "unexpected null first parameter passed to function applyResources.")
 	}
 	klog.Infof("applyResources first param type: %v, second param type: %v", dir.Type(), variables.Type())
 
@@ -1653,13 +1645,12 @@ func applyResourcesCEL(dir ref.Val, variables ref.Val) ref.Val {
 	err := applyResourcesHelper(triggerProc.triggerDir, dirStr, variables.Value(), triggerProc.triggerDef.isDryRun())
 	var ret ref.Val
 	if err != nil {
-		ret = types.String(fmt.Sprintf("applyResources error  applying template %v", err) )
+		ret = types.String(fmt.Sprintf("applyResources error  applying template %v", err))
 	} else {
 		ret = types.String("")
 	}
 	return ret
 }
-
 
 /* Find files with given suffixes */
 func findFiles(resourceDir string, suffixes []string) ([]string, error) {
@@ -1682,17 +1673,17 @@ func findFiles(resourceDir string, suffixes []string) ([]string, error) {
 
 func applyResourcesHelper(triggerDirectory string, directory string, variables interface{}, dryrun bool) error {
 
-	resourceDir, err := mergePathWithErrorCheck(triggerDirectory , directory)
+	resourceDir, err := utils.MergePathWithErrorCheck(triggerDirectory, directory)
 	if err != nil {
 		return err
 	}
-	files, err := findFiles(resourceDir , []string{"yaml", "yml"})
+	files, err := findFiles(resourceDir, []string{"yaml", "yml"})
 	if err != nil {
 		return err
 	}
 
 	/* ensure all files are substituted OK*/
-	substituted := make([] string, 0)
+	substituted := make([]string, 0)
 	for _, path := range files {
 		after, err := substituteTemplateFile(path, variables)
 		if err != nil {
@@ -1701,11 +1692,11 @@ func applyResourcesHelper(triggerDirectory string, directory string, variables i
 		substituted = append(substituted, after)
 	}
 
-    if dryrun {
+	if dryrun {
 		klog.Infof("applyResources: dryrun is set. Resources not created")
-    } else {
+	} else {
 		/* Apply the files */
-		for _, resource:= range substituted {
+		for _, resource := range substituted {
 			if klog.V(5) {
 				klog.Infof("applying resource: %s", resource)
 			}
@@ -1720,11 +1711,11 @@ func applyResourcesHelper(triggerDirectory string, directory string, variables i
 
 /* convert value to map[string][]string if possible. */
 func convertToHeaderMap(value interface{}) (map[string][]string, error) {
-	
+
 	if value == nil {
 		return make(map[string][]string), nil
 	}
-	ret, ok := value.(map[string][]string) 
+	ret, ok := value.(map[string][]string)
 	if ok {
 		return ret, nil
 	}
@@ -1733,7 +1724,7 @@ func convertToHeaderMap(value interface{}) (map[string][]string, error) {
 	valType := valValue.Type()
 	valKind := valValue.Kind()
 
-	if valKind != reflect.Map  {
+	if valKind != reflect.Map {
 		return nil, fmt.Errorf("convertToHeaderMap value is not Map, but %v", valType)
 	}
 	for iter := valValue.MapRange(); iter.Next(); {
@@ -1747,18 +1738,18 @@ func convertToHeaderMap(value interface{}) (map[string][]string, error) {
 		mapValueType := mapValue.Type()
 		mapValueKind := mapValueType.Kind()
 		if mapValueKind != reflect.Array && mapValueKind != reflect.Slice {
-			return nil, fmt.Errorf("convertToHeaderMap key %v, value %v not slice, but is of type %T,  reflection type: %v, kind: %v",mapKey, mapValue, mapValue, mapValueType, mapValueKind)
+			return nil, fmt.Errorf("convertToHeaderMap key %v, value %v not slice, but is of type %T,  reflection type: %v, kind: %v", mapKey, mapValue, mapValue, mapValueType, mapValueKind)
 		}
 		values := make([]string, 0)
 		for i := 0; i < mapValue.Len(); i++ {
 			element := mapValue.Index(i)
 			elementStr, ok := element.Interface().(string)
 			if !ok {
-				return nil, fmt.Errorf("convertToHeaderMap value of %v not array or slice of string: %v",mapKey, mapValue)
+				return nil, fmt.Errorf("convertToHeaderMap value of %v not array or slice of string: %v", mapKey, mapValue)
 			}
 			values = append(values, elementStr)
 		}
-		ret[mapKeyStr] = values	
+		ret[mapKeyStr] = values
 	}
 	return ret, nil
 }
@@ -1769,17 +1760,17 @@ func convertToHeaderMap(value interface{}) (map[string][]string, error) {
    context Any: optional context for the event, such as header
    Return string : empty if OK, otherwise, error message
 */
-// func sendEventCEL(destination ref.Val, message ref.Val, context ref.Val) ref.Val  
-func sendEventCEL(refs ... ref.Val) ref.Val {
+// func sendEventCEL(destination ref.Val, message ref.Val, context ref.Val) ref.Val
+func sendEventCEL(refs ...ref.Val) ref.Val {
 	if refs == nil {
 		klog.Error("sendEventCEL input is nil")
-		return types.ValOrErr(nil, "unexpected nil input to sendEventCEL.") 
+		return types.ValOrErr(nil, "unexpected nil input to sendEventCEL.")
 	}
 
 	numParams := len(refs)
-	if numParams != 3  {
+	if numParams != 3 {
 		klog.Errorf("sendEventCEL: expecting 3 parameters but got %v", numParams)
-		return types.ValOrErr(nil, "sendEventCEL: expecting 3 parameters but got : %v", numParams) 
+		return types.ValOrErr(nil, "sendEventCEL: expecting 3 parameters but got : %v", numParams)
 	}
 
 	destination := refs[0]
@@ -1792,12 +1783,12 @@ func sendEventCEL(refs ... ref.Val) ref.Val {
 
 	if message.Value() == nil {
 		klog.Infof("sendEventCEL  message is nil")
-		return types.ValOrErr(message, "unexpected null message parameter passed to function sendEvent.") 
+		return types.ValOrErr(message, "unexpected null message parameter passed to function sendEvent.")
 	}
 
 	if destination.Value() == nil {
 		klog.Infof("sendEventCEL destination is nil")
-		return types.ValOrErr(destination, "unexpected null destination parameter passed to function sendEvent.") 
+		return types.ValOrErr(destination, "unexpected null destination parameter passed to function sendEvent.")
 	}
 	klog.Infof("sendEventCEL first param type: %v, second param type: %v", destination.Type(), message.Type())
 
@@ -1808,28 +1799,28 @@ func sendEventCEL(refs ... ref.Val) ref.Val {
 	}
 
 	value := message.Value()
-	bytes, err := json.Marshal(value)
+	buf, err := json.Marshal(value)
 	if err != nil {
 		klog.Errorf("Unable to marshall as JSON: %v, type %T", value, value)
 		return types.ValOrErr(nil, "sendEventCEL error marshalling message to JSON: %v", err)
-	} 
+	}
 
 	destNode := eventProviders.GetEventDestination(dest)
 	if destNode == nil {
 		klog.Errorf("Unable to find an eventDestination with the name '%s'. Verify that it has been defined.", dest)
-		return  types.ValOrErr(nil, "sendEventCEL Unable to find event destinations %v", dest)
+		return types.ValOrErr(nil, "sendEventCEL Unable to find event destinations %v", dest)
 	}
 	provider := eventProviders.GetMessageProvider(destNode.ProviderRef)
 	if provider == nil {
 		klog.Errorf("Unable to find a messageProvider with the name '%s'. Verify that is has been defined.", destNode.ProviderRef)
-		return  types.ValOrErr(nil, "sendEventCEL Unable to find message povider %v", destNode.ProviderRef)
+		return types.ValOrErr(nil, "sendEventCEL Unable to find message povider %v", destNode.ProviderRef)
 	}
 
 	var header interface{} = nil
 	if numParams == 3 {
 		header, err = convertToHeaderMap(context.Value())
 		if err != nil {
-			return  types.ValOrErr(context, "sendEventCEL unabele to convert header to map[string][]stinrg: %v", context)
+			return types.ValOrErr(context, "sendEventCEL unabele to convert header to map[string][]stinrg: %v", context)
 		}
 	}
 
@@ -1838,7 +1829,7 @@ func sendEventCEL(refs ... ref.Val) ref.Val {
 		return types.String("")
 	}
 
-	err = provider.Send(destNode, bytes, header)
+	err = provider.Send(destNode, buf, header)
 	if err != nil {
 		klog.Error(err)
 		return types.ValOrErr(nil, "sendEventCEL error sending message: %v", err)
@@ -1867,16 +1858,16 @@ func filterCEL(message ref.Val, expression ref.Val) ref.Val {
 	messageVal := message.Value()
 	if messageVal == nil {
 		klog.Infof("filterCEL  message is nil")
-		return types.ValOrErr(message, "unexpected null message parameter passed to function filter.") 
+		return types.ValOrErr(message, "unexpected null message parameter passed to function filter.")
 	}
 
 	expressionVal := expression.Value()
 	if expressionVal == nil {
 		klog.Infof("filterCEL expression is nil")
-		return types.ValOrErr(expression, "unexpected null expression parameter passed to function filter.") 
+		return types.ValOrErr(expression, "unexpected null expression parameter passed to function filter.")
 	}
 	if klog.V(6) {
-		klog.Infof("filterCEL first param type: %v, %T, second param type: %v, %T",  message.Type(), messageVal, expression.Type(), expressionVal)
+		klog.Infof("filterCEL first param type: %v, %T, second param type: %v, %T", message.Type(), messageVal, expression.Type(), expressionVal)
 	}
 
 	expressionStr, ok := expressionVal.(string)
@@ -1884,14 +1875,14 @@ func filterCEL(message ref.Val, expression ref.Val) ref.Val {
 		klog.Infof("filter expression %v is not string", expressionVal)
 		return types.ValOrErr(expression, "unexpected type '%v' passed as destination parameter to function filter. It should be string", expression.Type())
 	}
-	
+
 	var err error
 	messageValue := reflect.ValueOf(messageVal)
 	messageType := messageValue.Type()
 	messageKind := messageType.Kind()
 	if messageKind != reflect.Map && messageKind != reflect.Array && messageKind != reflect.Slice {
 		klog.Errorf("filterCEL value is neither map nor array, but : %v", messageKind)
-		return types.ValOrErr(message, "for function filter, parameter message is neither a map nor an array, but %v", messageKind) 
+		return types.ValOrErr(message, "for function filter, parameter message is neither a map nor an array, but %v", messageKind)
 	}
 	var retValue interface{}
 	if messageKind == reflect.Map {
@@ -1899,10 +1890,10 @@ func filterCEL(message ref.Val, expression ref.Val) ref.Val {
 		for iter := messageValue.MapRange(); iter.Next(); {
 			key := iter.Key()
 			value := iter.Value()
-			err = filterMapEntry(retMap, key, value , expressionStr ) 
+			err = filterMapEntry(retMap, key, value, expressionStr)
 			if err != nil {
-				klog.Errorf("In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err) 
-				return types.ValOrErr(message, "In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err) 
+				klog.Errorf("In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err)
+				return types.ValOrErr(message, "In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err)
 			}
 		}
 		retValue = retMap.Interface()
@@ -1911,10 +1902,10 @@ func filterCEL(message ref.Val, expression ref.Val) ref.Val {
 		retArray := reflect.MakeSlice(reflect.SliceOf(messageType.Elem()), 0, 0)
 		for i := 0; i < messageValue.Len(); i++ {
 			value := messageValue.Index(i)
-			retArray, err = filterArraySlice(retArray, value , expressionStr ) 
+			retArray, err = filterArraySlice(retArray, value, expressionStr)
 			if err != nil {
-				klog.Errorf("In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err) 
-				return types.ValOrErr(message, "In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err) 
+				klog.Errorf("In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err)
+				return types.ValOrErr(message, "In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err)
 			}
 		}
 		retValue = retArray.Interface()
@@ -1926,7 +1917,7 @@ func filterCEL(message ref.Val, expression ref.Val) ref.Val {
 	}
 	return ret
 }
-	
+
 /* Add key/value into a map if the expression evaluates to true.
   map: map to insert the key/value
   key: key of the entry
@@ -1939,8 +1930,8 @@ func filterCEL(message ref.Val, expression ref.Val) ref.Val {
  Then then evaluates the expression in the context of the key/value variables.
  If the expression is true, it inserts the ke/value into the map
 */
-func filterMapEntry(mapVal reflect.Value, key, value reflect.Value, expression string ) error {
-	env, err := initializeEmptyCELEnv() 
+func filterMapEntry(mapVal reflect.Value, key, value reflect.Value, expression string) error {
+	env, err := initializeEmptyCELEnv()
 	if err != nil {
 		return err
 	}
@@ -1951,7 +1942,7 @@ func filterMapEntry(mapVal reflect.Value, key, value reflect.Value, expression s
 	ident := decls.NewIdent(keyName, decls.String, nil)
 	env, err = env.Extend(cel.Declarations(ident))
 	if err != nil {
-		return  err
+		return err
 	}
 
 	valueName := "value"
@@ -1961,7 +1952,7 @@ func filterMapEntry(mapVal reflect.Value, key, value reflect.Value, expression s
 	if err != nil {
 		return err
 	}
-	condition, err := evalCondition(env, expression, variables) 
+	condition, err := evalCondition(env, expression, variables)
 	if err != nil {
 		return err
 	}
@@ -1984,8 +1975,8 @@ var nilValue = reflect.ValueOf(nil)
  Then then evaluates the expression in the context of the value variables.
  If the expression is true, it inserts the value into the slice
 */
-func filterArraySlice(slice reflect.Value, value reflect.Value, expression string ) (reflect.Value, error) {
-	env, err := initializeEmptyCELEnv() 
+func filterArraySlice(slice reflect.Value, value reflect.Value, expression string) (reflect.Value, error) {
+	env, err := initializeEmptyCELEnv()
 	if err != nil {
 		return nilValue, err
 	}
@@ -1999,7 +1990,7 @@ func filterArraySlice(slice reflect.Value, value reflect.Value, expression strin
 	if err != nil {
 		return nilValue, err
 	}
-	condition, err := evalCondition(env, expression, variables) 
+	condition, err := evalCondition(env, expression, variables)
 	if err != nil {
 		return nilValue, err
 	}
@@ -2011,10 +2002,9 @@ func filterArraySlice(slice reflect.Value, value reflect.Value, expression strin
 }
 
 /* Get declaration of additional overloaded CEL functions */
-func getAdditionalCELFuncDecls() cel.EnvOption{
+func getAdditionalCELFuncDecls() cel.EnvOption {
 	return triggerFuncDecls
 }
-
 
 /* Get implemenations of additional overloaded CEL functions */
 func getAdditionalCELFuncs() cel.ProgramOption {
@@ -2025,57 +2015,57 @@ var triggerFuncDecls cel.EnvOption
 var triggerFuncs cel.ProgramOption
 
 func init() {
-	triggerFuncDecls = cel.Declarations (
-		decls.NewFunction("filter", 
-			decls.NewOverload("filter_any_string", []*exprpb.Type{ decls.Any, decls.String}, decls.Any)),
-		decls.NewFunction("call", 
+	triggerFuncDecls = cel.Declarations(
+		decls.NewFunction("filter",
+			decls.NewOverload("filter_any_string", []*exprpb.Type{decls.Any, decls.String}, decls.Any)),
+		decls.NewFunction("call",
 			decls.NewOverload("call_string_any_string", []*exprpb.Type{decls.String, decls.Any}, decls.Any)),
-		decls.NewFunction("sendEvent", 
+		decls.NewFunction("sendEvent",
 			decls.NewOverload("sendEvent_string_any_any", []*exprpb.Type{decls.String, decls.Any, decls.Any}, decls.String)),
-		decls.NewFunction("applyResources", 
+		decls.NewFunction("applyResources",
 			decls.NewOverload("applyResources_string_any", []*exprpb.Type{decls.String, decls.Any}, decls.String)),
-		decls.NewFunction("kabaneroConfig", 
+		decls.NewFunction("kabaneroConfig",
 			decls.NewOverload("kabaneroConfig", []*exprpb.Type{}, decls.NewMapType(decls.String, decls.Any))),
-		decls.NewFunction("jobID", 
+		decls.NewFunction("jobID",
 			decls.NewOverload("jobID", []*exprpb.Type{}, decls.String)),
-		decls.NewFunction("downloadYAML", 
+		decls.NewFunction("downloadYAML",
 			decls.NewOverload("downloadYAML_map_string", []*exprpb.Type{decls.NewMapType(decls.String, decls.Any), decls.String}, decls.NewMapType(decls.String, decls.Any))),
-		decls.NewFunction("toDomainName", 
+		decls.NewFunction("toDomainName",
 			decls.NewOverload("toDomainName_string", []*exprpb.Type{decls.String}, decls.String)),
-		decls.NewFunction("toLabel", 
+		decls.NewFunction("toLabel",
 			decls.NewOverload("toLabel_string", []*exprpb.Type{decls.String}, decls.String)),
 		decls.NewFunction("split",
 			decls.NewOverload("split_string", []*exprpb.Type{decls.String, decls.String}, decls.NewListType(decls.String))))
 
 	triggerFuncs = cel.Functions(
 		&functions.Overload{
-	        Operator: "filter",
-	        Binary: filterCEL} ,
+			Operator: "filter",
+			Binary:   filterCEL},
 		&functions.Overload{
-	        Operator: "call",
-	        Binary: callCEL} ,
+			Operator: "call",
+			Binary:   callCEL},
 		&functions.Overload{
-	        Operator: "sendEvent",
-	        Function: sendEventCEL} ,
+			Operator: "sendEvent",
+			Function: sendEventCEL},
 		&functions.Overload{
-	        Operator: "applyResources",
-	        Binary: applyResourcesCEL} ,
+			Operator: "applyResources",
+			Binary:   applyResourcesCEL},
 		&functions.Overload{
-	        Operator: "kabaneroConfig",
-	        Function: kabaneroConfigCEL} ,
+			Operator: "kabaneroConfig",
+			Function: kabaneroConfigCEL},
 		&functions.Overload{
-	        Operator: "jobID",
-	        Function: jobIDCEL} ,
+			Operator: "jobID",
+			Function: jobIDCEL},
 		&functions.Overload{
-	        Operator: "downloadYAML",
-	        Binary: downloadYAMLCEL} ,
+			Operator: "downloadYAML",
+			Binary:   downloadYAMLCEL},
 		&functions.Overload{
-	        Operator: "toDomainName",
-	        Unary: toDomainNameCEL} ,
+			Operator: "toDomainName",
+			Unary:    toDomainNameCEL},
 		&functions.Overload{
-	        Operator: "toLabel",
-	        Unary: toLabelCEL} ,
+			Operator: "toLabel",
+			Unary:    toLabelCEL},
 		&functions.Overload{
-	        Operator: "split",
-	        Binary: splitCEL})
+			Operator: "split",
+			Binary:   splitCEL})
 }

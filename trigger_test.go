@@ -44,14 +44,14 @@ initialize:
 /* Test reading trigger yaml files withou errors*/
 func TestReadYaml(t *testing.T) {
 	var files = []string{
-		TRIGGER0+"/trigger0.yaml",
+		TRIGGER0 + "/trigger0.yaml",
 	}
 
 	for _, fileName := range files {
-		td := &eventTriggerDefinition {
-			setting: []map[interface{}]interface{}{},
-			eventTriggers: make(map[string] []map[interface{}]interface{}),
-			functions: make(map[string]map[interface{}]interface{}),
+		td := &eventTriggerDefinition{
+			setting:       []map[interface{}]interface{}{},
+			eventTriggers: make(map[string][]map[interface{}]interface{}),
+			functions:     make(map[string]map[interface{}]interface{}),
 		}
 		err := readTriggerDefinition(fileName, td)
 		if err != nil {
@@ -60,7 +60,6 @@ func TestReadYaml(t *testing.T) {
 		}
 	}
 }
-
 
 /* This is not so much a unit test as an experiment to get CEL to use map[string]interface{] as variable definition*/
 func TestCEL(t *testing.T) {
@@ -125,7 +124,6 @@ func TestJSON(t *testing.T) {
 	fmt.Printf("%T, %T, %T, %T, %T %T\n", m["float"], m["int"], m["bool"], m["array"], m["array"].([]interface{})[0], m["array"].([]interface{})[1])
 }
 
-
 /* Test applying template using map[string]interface{}*/
 func TestGoTemplate(t *testing.T) {
 	srcJSON := []byte(`{"floatAttr": 1.2, "intAttr": 1, "boolAttr": true,  "arrayAttr":["apple", "orange"] }`)
@@ -148,7 +146,7 @@ func TestGoTemplate(t *testing.T) {
 	}
 }
 
-var testTemplate string = `
+var testTemplate = `
 ----- Event Variables ----
 {{.event.stringAttr}}
 {{.event.floatAttr}}
@@ -196,7 +194,7 @@ var testTemplate string = `
 {{.reuseIfThenElseStringAttr}}
 `
 
-var result string = `
+var result = `
 ----- Event Variables ----
 string1
 1.2
@@ -276,18 +274,18 @@ func TestApplyTemplateWithCELVariables(t *testing.T) {
 }
 
 func TestConditionalVariable(t *testing.T) {
-	srcEvents := [][] byte {
+	srcEvents := [][]byte{
 		[]byte(`{"attr1": "string1", "attr2": "string2"}`),
 		[]byte(`{"attr1": "string1a", "attr2": "string2"}`),
 		[]byte(`{"attr1": "string1", "attr2": "string2a"}`),
 		[]byte(`{"attr1": "string1a", "attr2": "string2a"}`),
 	}
 
-/*
-	triggerDef, err := readTriggerDefinition(TRIGGER3)
-	if err != nil {
-		t.Fatal(err)
-	}
+	/*
+		triggerDef, err := readTriggerDefinition(TRIGGER3)
+		if err != nil {
+			t.Fatal(err)
+		}
 	*/
 	tp := newTriggerProcessor()
 	err := tp.initialize(TRIGGER3)
@@ -306,13 +304,12 @@ func TestConditionalVariable(t *testing.T) {
 	}
 }
 
-func testOneConditional(tp *triggerProcessor, srcEvent []byte, expectedDirectory  string) error {
+func testOneConditional(tp *triggerProcessor, srcEvent []byte, expectedDirectory string) error {
 	var event map[string]interface{}
 	err := json.Unmarshal(srcEvent, &event)
 	if err != nil {
 		return err
 	}
-
 
 	variablesArray, err := tp.processMessage(event, "default")
 	if err != nil {
@@ -322,7 +319,7 @@ func testOneConditional(tp *triggerProcessor, srcEvent []byte, expectedDirectory
 	variables := variablesArray[0]
 	dir, ok := variables["directory"]
 	if !ok {
-		return fmt.Errorf("Unable to locate variable directory")
+		return fmt.Errorf("unable to locate variable directory")
 	}
 	if dir != expectedDirectory {
 		return fmt.Errorf("directory value %v is not expected value %s", dir, expectedDirectory)
@@ -380,12 +377,10 @@ func testOneConditional(tp *triggerProcessor, srcEvent []byte, expectedDirectory
 //	return nil
 //}
 
-
-
 func TestTimestamp(t *testing.T) {
-	next := ""	
+	next := ""
 	last := getTimestamp()
-	for i:=0; i < 20; i++{
+	for i := 0; i < 20; i++ {
 		next = getTimestamp()
 		if next == last {
 			t.Errorf("Some consecutive timestamps have the same value: %s %s", next, last)
@@ -395,14 +390,13 @@ func TestTimestamp(t *testing.T) {
 	fmt.Printf("Last timestamp is : %s\n", last)
 }
 
-
 func TestAdditionalfunctions(t *testing.T) {
 
-/*
-	triggerDef, err := readTriggerDefinition(TRIGGER4)
-	if err != nil {
-		t.Error(err)
-	}
+	/*
+		triggerDef, err := readTriggerDefinition(TRIGGER4)
+		if err != nil {
+			t.Error(err)
+		}
 	*/
 
 	tp := newTriggerProcessor()
@@ -428,7 +422,7 @@ func TestAdditionalfunctions(t *testing.T) {
 	}
 
 	str2Obj, ok := variables["str2"]
-	if ! ok {
+	if !ok {
 		t.Errorf("Unable to locate variable str2")
 	}
 	fmt.Printf("after split, type: %t,  value: %v", str2Obj, str2Obj)
@@ -448,7 +442,7 @@ func TestAdditionalfunctions(t *testing.T) {
 
 }
 
-var testNestedVariableTemplate string = `
+var testNestedVariableTemplate = `
 ----- Event Variables ----
 {{.event.stringAttr}}
 {{.event.floatAttr}}
@@ -499,7 +493,7 @@ var testNestedVariableTemplate string = `
 {{.nested.nested1.reuseInt64Attr}}
 `
 
-var nestedVariableResult string = `
+var nestedVariableResult = `
 ----- Event Variables ----
 string1
 1.2
@@ -550,7 +544,6 @@ got-string-1
 10
 `
 
-
 /* Test double nested variables */
 func TestDoubleNestedCELVariables(t *testing.T) {
 	srcEvent := []byte(` {"stringAttr": "string1", "floatAttr": 1.2, "intAttr": 100, "boolAttr": true,  "arrayAttr":["apple", "orange"], "objectAttr": { "innerFloatAttr": 1.2, "innerStringAttr": "inner string"} }`)
@@ -560,17 +553,17 @@ func TestDoubleNestedCELVariables(t *testing.T) {
 		t.Fatal(err)
 	}
 
-/*
-	triggerDef, err := readTriggerDefinition(TRIGGER5)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, variables, _, err1 := initializeCELEnv(triggerDef, event)
-	if err1 != nil {
-		t.Fatal(err1)
-	}
+	/*
+		triggerDef, err := readTriggerDefinition(TRIGGER5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, variables, _, err1 := initializeCELEnv(triggerDef, event)
+		if err1 != nil {
+			t.Fatal(err1)
+		}
 
-*/
+	*/
 	tp := newTriggerProcessor()
 	err = tp.initialize(TRIGGER5)
 	if err != nil {
@@ -588,15 +581,13 @@ func TestDoubleNestedCELVariables(t *testing.T) {
 	}
 	fmt.Printf("after substitution: %s\n", afterSubstitution)
 
-
 	if nestedVariableResult != afterSubstitution {
-		t.Fatalf("template substitution is not as expected: Expecting: '%s', but received: '%s'", nestedVariableResult,afterSubstitution)
+		t.Fatalf("template substitution is not as expected: Expecting: '%s', but received: '%s'", nestedVariableResult, afterSubstitution)
 	}
 }
 
-
 func TestSwitch(t *testing.T) {
-	srcEvents := [][] byte {
+	srcEvents := [][]byte{
 		[]byte(`{"attr1": "string1", "attr2": "string2"}`),
 		[]byte(`{"attr1": "string1a", "attr2": "string2"}`),
 		[]byte(`{"attr1": "string1", "attr2": "string2a"}`),
@@ -620,13 +611,12 @@ func TestSwitch(t *testing.T) {
 	}
 }
 
-func testOneSwitch(tp *triggerProcessor, srcEvent []byte, expectedDirectory  string) error {
+func testOneSwitch(tp *triggerProcessor, srcEvent []byte, expectedDirectory string) error {
 	var event map[string]interface{}
 	err := json.Unmarshal(srcEvent, &event)
 	if err != nil {
 		return err
 	}
-
 
 	variablesArray, err := tp.processMessage(event, "default")
 	if err != nil {
@@ -636,7 +626,7 @@ func testOneSwitch(tp *triggerProcessor, srcEvent []byte, expectedDirectory  str
 	variables := variablesArray[0]
 	dir, ok := variables["directory"]
 	if !ok {
-		return fmt.Errorf("Unable to locate variable directory")
+		return fmt.Errorf("unable to locate variable directory")
 	}
 	if dir != expectedDirectory {
 		return fmt.Errorf("directory value %v is not expected value %s", dir, expectedDirectory)
@@ -674,8 +664,7 @@ func TestCall(t *testing.T) {
 	}
 }
 
-
-func checkFinal(variables map[string] interface{}) error {
+func checkFinal(variables map[string]interface{}) error {
 	finalObj, ok := variables["final"]
 	if !ok {
 		return fmt.Errorf("variable final not found. Variables: %v", variables)
@@ -717,11 +706,11 @@ func TestRecursiveCall(t *testing.T) {
 }
 
 func TestFilter(t *testing.T) {
-	srcEvent := []byte( `{ "Connection": ["close"], "X-Forwarded-For": ["169.60.70.162"], "Content-Length": [23808], ` +
-	 ` "Content-Type": [ "application/json" ], "X-Github-Delivery" : [ "14571b40-f72e-11e9-9252-a0ce3bc96ef7" ],` +
-	 ` "X-Github-Event" : [ "pull_request" ], "X-Github-Enterprise-host" : [ "github.ibm.com" ],`+
-	 ` "X-Github-Enterprise-version" : ["2.16.16" ], "User-Agent" : [ "GitHub-Hookshot/632ecda" ],` +
-	 ` "Accept": [ "*/*" ], "Host" : [ "webhook.site" ]} `)
+	srcEvent := []byte(`{ "Connection": ["close"], "X-Forwarded-For": ["169.60.70.162"], "Content-Length": [23808], ` +
+		` "Content-Type": [ "application/json" ], "X-Github-Delivery" : [ "14571b40-f72e-11e9-9252-a0ce3bc96ef7" ],` +
+		` "X-Github-Event" : [ "pull_request" ], "X-Github-Enterprise-host" : [ "github.ibm.com" ],` +
+		` "X-Github-Enterprise-version" : ["2.16.16" ], "User-Agent" : [ "GitHub-Hookshot/632ecda" ],` +
+		` "Accept": [ "*/*" ], "Host" : [ "webhook.site" ]} `)
 	var event map[string]interface{}
 	err := json.Unmarshal(srcEvent, &event)
 	if err != nil {
