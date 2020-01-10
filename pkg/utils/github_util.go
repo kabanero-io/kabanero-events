@@ -1,123 +1,17 @@
-/*
-Copyright 2019 IBM Corporation
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
-package main
+package utils
 
 import (
-	"encoding/json"
-	"github.com/google/go-github/github"
-	"github.com/kabanero-io/kabanero-events/internal/utils"
-	"io/ioutil"
-	"k8s.io/klog"
-	"net/http"
-	"os"
-
 	"context"
 	"fmt"
+	"github.com/google/go-github/github"
+	"k8s.io/klog"
+	"net/http"
 )
-
-const (
-	tlsCertPath = "/etc/tls/tls.crt"
-	tlsKeyPath  = "/etc/tls/tls.key"
-)
-
-/* HTTP listener */
-func listenerHandler(writer http.ResponseWriter, req *http.Request) {
-
-	header := req.Header
-	klog.Infof("Received request. Header: %v", header)
-
-	var body = req.Body
-
-	defer body.Close()
-	bytes, err := ioutil.ReadAll(body)
-	if err != nil {
-		klog.Errorf("Webhook listener can not read body. Error: %v", err)
-	} else {
-		klog.Infof("Webhook listener received body: %v", string(bytes))
-	}
-
-	var bodyMap map[string]interface{}
-	err = json.Unmarshal(bytes, &bodyMap)
-	if err != nil {
-		klog.Errorf("Unable to unarmshal json body: %v", err)
-		return
-	}
-
-	message := make(map[string]interface{})
-	message[HEADER] = map[string][]string(header)
-	message[BODY] = bodyMap
-
-	bytes, err = json.Marshal(message)
-	if err != nil {
-		klog.Errorf("Unable to marshall as JSON: %v, type %T", message, message)
-		return
-	}
-
-	destNode := eventProviders.GetEventDestination(WEBHOOKDESTINATION)
-	if destNode == nil {
-		klog.Errorf("Unable to find an eventDestination with the name '%s'. Verify that it has been defined.", WEBHOOKDESTINATION)
-		return
-	}
-	provider := eventProviders.GetMessageProvider(destNode.ProviderRef)
-	if provider == nil {
-		klog.Errorf("Unable to find a messageProvider with the name '%s'. Verify that is has been defined.", destNode.ProviderRef)
-		return
-	}
-
-	err = provider.Send(destNode, bytes, nil)
-	if err != nil {
-		klog.Errorf("Unable to send webhook message. Error: %v", err)
-		return
-	}
-	if err != nil {
-		klog.Errorf("Error processing webhook message: %v", err)
-	}
-	writer.WriteHeader(http.StatusAccepted)
-}
-
-func newListener() error {
-	http.HandleFunc("/webhook", listenerHandler)
-
-	if disableTLS {
-		klog.Infof("Starting listener on port 9080")
-		err := http.ListenAndServe(":9080", nil)
-		return err
-	}
-
-	// Setup TLS listener
-	if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
-		klog.Fatalf("TLS certificate '%s' not found: %v", tlsCertPath, err)
-		return err
-	}
-
-	if _, err := os.Stat(tlsKeyPath); os.IsNotExist(err) {
-		klog.Fatalf("TLS private key '%s' not found: %v", tlsKeyPath, err)
-		return err
-	}
-
-	klog.Infof("Starting listener on port 9443")
-	err := http.ListenAndServeTLS(":9443", tlsCertPath, tlsKeyPath, nil)
-	return err
-}
 
 /* Get the repository's information from from github message body: name, owner, html_url, and ref */
 func getRepositoryInfo(body map[string]interface{}, repositoryEvent string) (string, string, string, string, error) {
-
 	ref := ""
+
 	if repositoryEvent == "push" {
 		// use SHA for ref
 		afterObj, ok := body["after"]
@@ -204,8 +98,45 @@ func getRepositoryInfo(body map[string]interface{}, repositoryEvent string) (str
 	return owner, name, htmlURL, ref, nil
 }
 
-// Download file and return: bytes of the file, true if file texists, and any error
-func downloadFileFromGithub(owner, repository, fileName, ref, githubURL, user, token string, isEnterprise bool) ([]byte, bool, error) {
+/* Download YAML from Repository.
+header: HTTP header from webhook
+bodyMap: HTTP  message body from webhook
+*/
+func DownloadYAML(header map[string][]string, bodyMap map[string]interface{}, fileName string) (map[string]interface{}, bool, error) {
+
+	hostHeader, isEnterprise := header[http.CanonicalHeaderKey("x-github-enterprise-host")]
+	var host string
+	if !isEnterprise {
+		host = "github.com"
+	} else {
+		host = hostHeader[0]
+	}
+
+	repositoryEvent := header["X-Github-Event"][0]
+
+	owner, name, htmlURL, ref, err := getRepositoryInfo(bodyMap, repositoryEvent)
+	if err != nil {
+		return nil, false, fmt.Errorf("unable to get repository owner, name, or html_url from webhook message: %v", err)
+	}
+
+	namespace := GetKabaneroNamespace()
+	user, token, _, err := GetURLAPIToken(namespace, htmlURL)
+	if err != nil {
+		return nil, false, fmt.Errorf("unable to get user/token secrets for URL %v", htmlURL)
+	}
+
+	githubURL := "https://" + host
+
+	bytes, found, err := DownloadFileFromGithub(owner, name, fileName, ref, githubURL, user, token, isEnterprise)
+	if err != nil {
+		return nil, found, err
+	}
+	retMap, err := YAMLToMap(bytes)
+	return retMap, found, err
+}
+
+// Download file and return: bytes of the file, true if file exists, and any error
+func DownloadFileFromGithub(owner, repository, fileName, ref, githubURL, user, token string, isEnterprise bool) ([]byte, bool, error) {
 
 	if klog.V(5) {
 		klog.Infof("downloadFileFromGithub %v, %v, %v, %v, %v, %v, %v", owner, repository, fileName, ref, githubURL, user, isEnterprise)
@@ -275,40 +206,4 @@ func downloadFileFromGithub(owner, repository, fileName, ref, githubURL, user, t
 		return nil, false, fmt.Errorf("unable to download %v/%v/%v, http error %v", owner, repository, fileName, resp.Response.Status)
 	}
 
-}
-
-/* Download YAML from Repository.
-header: HTTP header from webhook
-bodyMap: HTTP  message body from webhook
-*/
-func downloadYAML(header map[string][]string, bodyMap map[string]interface{}, fileName string) (map[string]interface{}, bool, error) {
-
-	hostHeader, isEnterprise := header[http.CanonicalHeaderKey("x-github-enterprise-host")]
-	var host string
-	if !isEnterprise {
-		host = "github.com"
-	} else {
-		host = hostHeader[0]
-	}
-
-	repositoryEvent := header["X-Github-Event"][0]
-
-	owner, name, htmlURL, ref, err := getRepositoryInfo(bodyMap, repositoryEvent)
-	if err != nil {
-		return nil, false, fmt.Errorf("unable to get repository owner, name, or html_url from webhook message: %v", err)
-	}
-
-	user, token, _, err := utils.GetURLAPIToken(dynamicClient, webhookNamespace, htmlURL)
-	if err != nil {
-		return nil, false, fmt.Errorf("unable to get user/token secrets for URL %v", htmlURL)
-	}
-
-	githubURL := "https://" + host
-
-	bytes, found, err := downloadFileFromGithub(owner, name, fileName, ref, githubURL, user, token, isEnterprise)
-	if err != nil {
-		return nil, found, err
-	}
-	retMap, err := utils.YAMLToMap(bytes)
-	return retMap, found, err
 }

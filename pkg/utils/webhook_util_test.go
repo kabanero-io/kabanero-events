@@ -2,7 +2,7 @@ package utils_test
 
 import (
 	"fmt"
-	"github.com/kabanero-io/kabanero-events/internal/utils"
+	"github.com/kabanero-io/kabanero-events/pkg/utils"
 	"io/ioutil"
 	"os"
 	"path/filepath"

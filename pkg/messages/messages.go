@@ -1,4 +1,4 @@
-package main
+package messages
 
 import (
 	"gopkg.in/yaml.v2"
@@ -48,10 +48,11 @@ type EventNode struct {
 }
 
 var (
+	eventProviders   *EventDefinition
 	messageProviders map[string]MessageProvider
 )
 
-func initializeEventProviders(fileName string) (*EventDefinition, error) {
+func InitializeEventProviders(fileName string) (*EventDefinition, error) {
 	if klog.V(5) {
 		klog.Info("Initializing event providers...")
 	}
@@ -94,7 +95,12 @@ func initializeEventProviders(fileName string) (*EventDefinition, error) {
 			klog.Warningf("Provider '%s' is not recognized.", provider.ProviderType)
 		}
 	}
-	return ed, nil
+	eventProviders = ed
+	return eventProviders, nil
+}
+
+func GetEventProviders() *EventDefinition {
+	return eventProviders
 }
 
 func readEventDefinition(fileName string) (*EventDefinition, error) {
@@ -119,7 +125,7 @@ func (ed *EventDefinition) GetMessageProvider(name string) MessageProvider {
 
 // GetEventDestination returns the eventDestination specified by name.
 func (ed *EventDefinition) GetEventDestination(name string) *EventNode {
-	for _, node := range eventProviders.EventDestinations {
+	for _, node := range ed.EventDestinations {
 		if node.Name == name {
 			return node
 		}

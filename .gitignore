@@ -4,6 +4,7 @@
 vendor/
 # executable
 kabanero-events
+kabanero-listener
 
 ### Intellij ###
 .idea

@@ -14,13 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package trigger
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/kabanero-io/kabanero-events/internal/utils"
+	"github.com/kabanero-io/kabanero-events/pkg/utils"
+	"github.com/kabanero-io/kabanero-events/pkg/messages"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	//	"os"
@@ -46,6 +47,10 @@ import (
 	"k8s.io/klog"
 )
 
+var (
+	triggerProc *TriggerProcessor
+)
+
 /* Trigger file syntax
 
 keyword: block, default, if, switch
@@ -55,7 +60,7 @@ settrings :
   dryrun: bool
 
 eventTrigger section:
-eventTriggers:
+EventTriggers:
   - eventSource: <ident>
    input: <variable>
    body:
@@ -188,8 +193,8 @@ func countKeywords(mymap map[interface{}]interface{}) (int, uint) {
 	return count, flag
 }
 
-func (td *eventTriggerDefinition) isDryRun() bool {
-	for _, setting := range td.setting {
+func (td *EventTriggerDefinition) isDryRun() bool {
+	for _, setting := range td.Setting {
 		if val := setting["dryrun"]; val != nil {
 			if b, ok := val.(bool); ok {
 				return b
@@ -199,32 +204,33 @@ func (td *eventTriggerDefinition) isDryRun() bool {
 	return false
 }
 
-type eventTriggerDefinition struct {
-	setting       []map[interface{}]interface{}            // all settings
-	eventTriggers map[string][]map[interface{}]interface{} // event source name to triggers
-	functions     map[string]map[interface{}]interface{}   // function name to function body
+type EventTriggerDefinition struct {
+	Setting       []map[interface{}]interface{}            // all settings
+	EventTriggers map[string][]map[interface{}]interface{} // event source name to triggers
+	Functions     map[string]map[interface{}]interface{}   // function name to function body
 }
 
-type triggerProcessor struct {
-	triggerDef *eventTriggerDefinition
+type TriggerProcessor struct {
+	triggerDef *EventTriggerDefinition
 	triggerDir string // directory where trigger file is stored
 }
 
-func newTriggerProcessor() *triggerProcessor {
-	return &triggerProcessor{}
+func NewTriggerProcessor() *TriggerProcessor {
+	triggerProc = &TriggerProcessor{}
+	return triggerProc
 }
 
 /* Initialize trigger directory */
-func (tp *triggerProcessor) initialize(dir string) error {
+func (tp *TriggerProcessor) Initialize(dir string) error {
 	if klog.V(6) {
-		klog.Infof("triggerProcessor.initialize %v", dir)
-		defer klog.Infof("Leaving triggerProcessor.initialize %v", dir)
+		klog.Infof("TriggerProcessor.initialize %v", dir)
+		defer klog.Infof("Leaving TriggerProcessor.initialize %v", dir)
 	}
 	var err error
-	tp.triggerDef = &eventTriggerDefinition{
-		setting:       make([]map[interface{}]interface{}, 0),
-		eventTriggers: make(map[string][]map[interface{}]interface{}, 0),
-		functions:     make(map[string]map[interface{}]interface{}, 0),
+	tp.triggerDef = &EventTriggerDefinition{
+		Setting:       make([]map[interface{}]interface{}, 0),
+		EventTriggers: make(map[string][]map[interface{}]interface{}, 0),
+		Functions:     make(map[string]map[interface{}]interface{}, 0),
 	}
 	files, err := findFiles(dir, []string{".yaml", ".yml"})
 	if err != nil {
@@ -234,7 +240,7 @@ func (tp *triggerProcessor) initialize(dir string) error {
 		return fmt.Errorf("unable to locate trigger files at directory %v", dir)
 	}
 	for _, fileName := range files {
-		err = readTriggerDefinition(fileName, tp.triggerDef)
+		err = ReadTriggerDefinition(fileName, tp.triggerDef)
 		if err != nil {
 			return err
 		}
@@ -243,7 +249,7 @@ func (tp *triggerProcessor) initialize(dir string) error {
 	return nil
 }
 
-func messageListener(provider MessageProvider, node *EventNode) {
+func messageListener(provider messages.MessageProvider, node *messages.EventNode) {
 	klog.Infof("Starting listener event destination %v", node.Name)
 	for {
 		buf, err := provider.Receive(node)
@@ -260,7 +266,7 @@ func messageListener(provider MessageProvider, node *EventNode) {
 			klog.Errorf("Unable to unarmshal message from node %v", node.Name)
 			continue
 		}
-		_, err = triggerProc.processMessage(messageMap, node.Name)
+		_, err = triggerProc.ProcessMessage(messageMap, node.Name)
 		if err != nil {
 			klog.Errorf("Error processing message from destination %v. Message: %v, Error: %v", node.Name, messageMap, err)
 		} else if klog.V(6) {
@@ -269,14 +275,14 @@ func messageListener(provider MessageProvider, node *EventNode) {
 	}
 }
 
-func (tp *triggerProcessor) startListeners(providers *EventDefinition) error {
-	triggers := tp.triggerDef.eventTriggers
+func (tp *TriggerProcessor) StartListeners(providers *messages.EventDefinition) error {
+	triggers := tp.triggerDef.EventTriggers
 	for dest := range triggers {
-		destNode := eventProviders.GetEventDestination(dest)
+		destNode := providers.GetEventDestination(dest)
 		if destNode == nil {
 			return fmt.Errorf("unable to find an eventDestination with the name '%s' in trigger definitions. Verify that it has been defined", dest)
 		}
-		provider := eventProviders.GetMessageProvider(destNode.ProviderRef)
+		provider := providers.GetMessageProvider(destNode.ProviderRef)
 		if provider == nil {
 			return fmt.Errorf("unable to find a messageProvider with the name '%s'. Verify that is has been defined", destNode.ProviderRef)
 		}
@@ -301,18 +307,18 @@ func parseTrigger(trigger map[interface{}]interface{}) ([]string, string, []inte
 	eventSourceArray := make([]string, 0)
 	eventSourceObj, ok := trigger[EVENTSOURCE]
 	if !ok {
-		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v does not containt eventSource", trigger)
+		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v does not contain eventSource", trigger)
 	}
 	eventSource, ok := eventSourceObj.(string)
 	if !ok {
-		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v eventSoruce if not a string but a %T", eventSource, eventSourceObj)
+		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v eventSource if not a string but a %T", eventSource, eventSourceObj)
 
 	}
 	eventSourceArray = append(eventSourceArray, eventSource)
 
 	inputObj, ok := trigger[INPUT]
 	if !ok {
-		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v does not containt input", trigger)
+		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v does not contain input", trigger)
 	}
 	input, ok := inputObj.(string)
 	if !ok {
@@ -322,7 +328,7 @@ func parseTrigger(trigger map[interface{}]interface{}) ([]string, string, []inte
 
 	bodyObj, ok := trigger[BODY]
 	if !ok {
-		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v does not containt body", trigger)
+		return eventSourceArray, "", nil, fmt.Errorf("trigger object %v does not contain body", trigger)
 	}
 	body, ok := bodyObj.([]interface{})
 	if !ok {
@@ -332,16 +338,16 @@ func parseTrigger(trigger map[interface{}]interface{}) ([]string, string, []inte
 	return eventSourceArray, input, body, nil
 }
 
-func (tp *triggerProcessor) processMessage(message map[string]interface{}, eventSource string) ([]map[string]interface{}, error) {
+func (tp *TriggerProcessor) ProcessMessage(message map[string]interface{}, eventSource string) ([]map[string]interface{}, error) {
 	if klog.V(5) {
-		klog.Infof("Entering triggerProcessor.processMessage. message: %v, eventSource: %v", message, eventSource)
-		defer klog.Infof("Leaving triggerProcessor.processMessage")
+		klog.Infof("Entering TriggerProcessor.ProcessMessage. message: %v, eventSource: %v", message, eventSource)
+		defer klog.Infof("Leaving TriggerProcessor.ProcessMessage")
 	}
 
 	if klog.V(5) {
 		klog.Infof("before getting triggerArray")
 	}
-	triggerArray, ok := tp.triggerDef.eventTriggers[eventSource]
+	triggerArray, ok := tp.triggerDef.EventTriggers[eventSource]
 	if !ok {
 		err := fmt.Errorf("no trigger found for event source %v", eventSource)
 		klog.Error(err)
@@ -360,7 +366,7 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 			return nil, err
 		}
 		if klog.V(5) {
-			klog.Infof("processMessage after parseTrigger: eventSources: %v", eventSources)
+			klog.Infof("ProcessMessage after parseTrigger: eventSources: %v", eventSources)
 		}
 
 		env, variables, err := initializeCELEnv(message, inputVariable)
@@ -368,17 +374,18 @@ func (tp *triggerProcessor) processMessage(message map[string]interface{}, event
 			return nil, err
 		}
 		if klog.V(5) {
-			klog.Infof("processMessage after initializeCELEnv")
+			klog.Infof("ProcessMessage after initializeCELEnv")
 		}
 
 		depth := 1
 		_, err = evalArrayObject(env, variables, bodyArray, depth)
 		if err != nil {
 			klog.Errorf("Error evaluating trigger %v: ERROR MESSAGE: %v", trigger, err)
+			klog.Fatal(err)
 			return nil, err
 		}
 		if klog.V(5) {
-			klog.Infof("processMessage after evalArrayObject")
+			klog.Infof("ProcessMessage after evalArrayObject")
 		}
 		savedVariables = append(savedVariables, variables)
 	}
@@ -962,7 +969,7 @@ func normalizeArrayInterface(val []interface{}) ([]interface{}, error) {
 }
 */
 
-func readTriggerDefinition(fileName string, td *eventTriggerDefinition) error {
+func ReadTriggerDefinition(fileName string, td *EventTriggerDefinition) error {
 	if klog.V(5) {
 		klog.Infof("enter readTriggerDefinitions %v", fileName)
 		defer klog.Infof("Leaving readTriggerDefinitions %v", fileName)
@@ -986,14 +993,14 @@ func readTriggerDefinition(fileName string, td *eventTriggerDefinition) error {
 		}
 		settings, ok := settingsObj.(map[interface{}]interface{})
 		if ok {
-			td.setting = append(td.setting, settings)
+			td.Setting = append(td.Setting, settings)
 		}
 	}
 
 	eventTriggersObj, ok := yamlMap[EVENTTRIGGERS]
 	if ok {
 		if klog.V(5) {
-			klog.Infof("found eventTriggers %v %T", eventTriggersObj, eventTriggersObj)
+			klog.Infof("found EventTriggers %v %T", eventTriggersObj, eventTriggersObj)
 		}
 		eventTriggersArray, ok := eventTriggersObj.([]interface{})
 		if ok {
@@ -1009,11 +1016,11 @@ func readTriggerDefinition(fileName string, td *eventTriggerDefinition) error {
 					}
 					eventSource, ok := eventSourceObj.(string)
 					if ok {
-						existingArray, ok := td.eventTriggers[eventSource]
+						existingArray, ok := td.EventTriggers[eventSource]
 						if !ok {
 							existingArray = make([]map[interface{}]interface{}, 0)
 						}
-						td.eventTriggers[eventSource] = append(existingArray, triggerMap)
+						td.EventTriggers[eventSource] = append(existingArray, triggerMap)
 					}
 				}
 			}
@@ -1058,11 +1065,11 @@ func readTriggerDefinition(fileName string, td *eventTriggerDefinition) error {
 							return fmt.Errorf("function output %v not a string %v", name, outputObj)
 						}
 
-						_, existing := td.functions[name]
+						_, existing := td.Functions[name]
 						if existing {
 							return fmt.Errorf("error: event trigger function redcelared: %v", name)
 						}
-						td.functions[name] = functionMap
+						td.Functions[name] = functionMap
 					}
 				}
 			}
@@ -1160,7 +1167,7 @@ func substituteTemplateFile(fileName string, variables interface{}) (string, err
 	}
 	str := string(buf)
 	klog.Infof("Before template substitution for %s: %s, variables type: %T", fileName, str, variables)
-	substituted, err := substituteTemplate(str, variables)
+	substituted, err := SubstituteTemplate(str, variables)
 	if err != nil {
 		klog.Errorf("Error in template substitution for %s: %s", fileName, err)
 	} else {
@@ -1169,7 +1176,7 @@ func substituteTemplateFile(fileName string, variables interface{}) (string, err
 	return substituted, err
 }
 
-func substituteTemplate(templateStr string, variables interface{}) (string, error) {
+func SubstituteTemplate(templateStr string, variables interface{}) (string, error) {
 	t, err := template.New("kabanero").Parse(templateStr)
 	if err != nil {
 		return "", err
@@ -1183,9 +1190,14 @@ func substituteTemplate(templateStr string, variables interface{}) (string, erro
 }
 
 /* Create resource. Assume it does not already exist */
-func createResource(resourceStr string, dynamicClient dynamic.Interface) error {
+func createResource(resourceStr string) error {
 	if klog.V(4) {
 		klog.Infof("Creating resource %s", resourceStr)
+	}
+
+	dynamicClient := utils.GetDynamicClient()
+	if dynamicClient == nil {
+		return fmt.Errorf("unable to get dynamic client")
 	}
 
 	/* Convert yaml to unstructured*/
@@ -1350,7 +1362,7 @@ Get timestamp. Timestamp format is UTC time expressed as:
       YYYYMMDDHHMMSSL, where L is last digits in multiples of 1/10 second.
 WARNING: This function may sleep up to 0.1 second per request if there are too many concurent requests
 */
-func getTimestamp() string {
+func GetTimestamp() string {
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -1400,13 +1412,13 @@ func splitCEL(strVal ref.Val, sepVal ref.Val) ref.Val {
 
 /* Return next job ID */
 func jobIDCEL(values ...ref.Val) ref.Val {
-	return types.String(getTimestamp())
+	return types.String(GetTimestamp())
 }
 
 /* Return next job ID */
 func kabaneroConfigCEL(values ...ref.Val) ref.Val {
 	ret := make(map[string]interface{})
-	ret[NAMESPACE] = webhookNamespace
+	ret[NAMESPACE] = utils.GetKabaneroNamespace()
 	return types.NewDynamicMap(types.DefaultTypeAdapter, ret)
 }
 
@@ -1458,7 +1470,7 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
 	}
 
 	var ret = make(map[string]interface{})
-	fileContent, exists, err := downloadYAML(headerMap, bodyMap, fileName)
+	fileContent, exists, err := utils.DownloadYAML(headerMap, bodyMap, fileName)
 	ret["exists"] = exists
 	if err != nil {
 		ret["error"] = fmt.Sprintf("%v", err)
@@ -1511,10 +1523,10 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 	}
 
 	if klog.V(6) {
-		klog.Infof("callCEL: getting functions:  %v ", triggerProc.triggerDef.functions)
+		klog.Infof("callCEL: getting functions:  %v ", triggerProc.triggerDef.Functions)
 	}
 
-	functionDecl, ok := triggerProc.triggerDef.functions[function]
+	functionDecl, ok := triggerProc.triggerDef.Functions[function]
 	if !ok {
 		klog.Errorf("callCEL function %v not found", function)
 		return types.ValOrErr(functionVal, "function %v not found", function)
@@ -1700,7 +1712,7 @@ func applyResourcesHelper(triggerDirectory string, directory string, variables i
 			if klog.V(5) {
 				klog.Infof("applying resource: %s", resource)
 			}
-			err = createResource(resource, dynamicClient)
+			err = createResource(resource)
 			if err != nil {
 				return err
 			}
@@ -1805,6 +1817,7 @@ func sendEventCEL(refs ...ref.Val) ref.Val {
 		return types.ValOrErr(nil, "sendEventCEL error marshalling message to JSON: %v", err)
 	}
 
+	eventProviders := messages.GetEventProviders()
 	destNode := eventProviders.GetEventDestination(dest)
 	if destNode == nil {
 		klog.Errorf("Unable to find an eventDestination with the name '%s'. Verify that it has been defined.", dest)
@@ -1820,7 +1833,7 @@ func sendEventCEL(refs ...ref.Val) ref.Val {
 	if numParams == 3 {
 		header, err = convertToHeaderMap(context.Value())
 		if err != nil {
-			return types.ValOrErr(context, "sendEventCEL unabele to convert header to map[string][]stinrg: %v", context)
+			return types.ValOrErr(context, "sendEventCEL unabele to convert header to map[string][]string: %v", context)
 		}
 	}
 

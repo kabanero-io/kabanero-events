@@ -131,7 +131,7 @@ func GetTriggerURL(collection map[string]interface{}, verifyChkSum bool) (string
 
 	triggersArray, ok := triggersObj.([]interface{})
 	if !ok {
-		return "", "", fmt.Errorf("collection does not contain triggers section is not an Arry")
+		return "", "", fmt.Errorf("collection does not contain triggers section is not an array")
 	}
 
 	var retURL = ""
@@ -174,6 +174,69 @@ func GetTriggerURL(collection map[string]interface{}, verifyChkSum bool) (string
 	}
 
 	return retURL, retChkSum, nil
+}
+
+/* Download the trigger.tar.gz and unpack into the directory
+   kabaneroIndexUrl: URL that serves kabanero-index.yaml
+   dir: directory to unpack the trigger.tar.gz
+*/
+func DownloadTrigger(kabaneroIndexURL string, dir string, verifyChkSum bool) error {
+	if klog.V(5) {
+		klog.Infof("Entering downloadTrigger kabaneroIndexURL: %s, directory to store trigger: %s", kabaneroIndexURL, dir)
+		defer klog.Infof("Leaving downloadTrigger kabaneroIndexURL: %s, directory to store trigger: %s", kabaneroIndexURL, dir)
+	}
+
+	kabaneroIndexBytes, err := ReadHTTPURL(kabaneroIndexURL)
+	if err != nil {
+		return err
+	}
+	if klog.V(5) {
+		klog.Infof("Retrieved kabanero index file: %s", string(kabaneroIndexBytes))
+	}
+	kabaneroIndexMap, err := YAMLToMap(kabaneroIndexBytes)
+	if err != nil {
+		return err
+	}
+	triggerURL, triggerChkSum, err := GetTriggerURL(kabaneroIndexMap, verifyChkSum)
+	if err != nil {
+		return err
+	}
+
+	if klog.V(5) {
+		klog.Infof("Found trigger with URL %s and sha256 checksum of %s", triggerURL, triggerChkSum)
+	}
+
+	triggerArchiveName := filepath.Join(dir, "incubator.trigger.tar.gz")
+	err = downloadFileTo(triggerURL, triggerArchiveName)
+	if err != nil {
+		return err
+	}
+
+	// Verify that the checksum matches the value found in kabanero-index.yaml
+	if verifyChkSum {
+		chkSum, err := sha256sum(triggerArchiveName)
+		if err != nil {
+			return fmt.Errorf("unable to calculate checksum of file %s: %s", triggerArchiveName, err)
+		}
+
+		if klog.V(5) {
+			klog.Infof("Calculated sha256 checksum of file %s: %s", triggerArchiveName, chkSum)
+		}
+
+		if chkSum != triggerChkSum {
+			klog.Fatalf("trigger collection checksum does not match the checksum from the Kabanero index: found: %s, expected: %s",
+				chkSum, triggerChkSum)
+		}
+	}
+
+	// Untar the triggers collection
+	triggerReadCloser, err := os.Open(triggerArchiveName)
+	if err != nil {
+		return err
+	}
+
+	err = DecompressGzipTar(triggerReadCloser, dir)
+	return err
 }
 
 /* Merge a directory path with a relative path. Return error if the rectory not a prefix of the merged path after the merge  */
@@ -265,66 +328,4 @@ func DecompressGzipTar(readCloser io.ReadCloser, dir string) error {
 
 	}
 	return nil
-}
-
-/* Download the trigger.tar.gz and unpack into the directory
-kabaneroIndexUrl: URL that serves kabanero-index.yaml
-dir: directory to unpack the trigger.tar.gz
-*/
-func DownloadTrigger(kabaneroIndexURL string, dir string, verifyChkSum bool) error {
-	if klog.V(5) {
-		klog.Infof("Entering downloadTrigger kabaneroIndexURL: %s, directory to store trigger: %s", kabaneroIndexURL, dir)
-		defer klog.Infof("Leaving downloadTrigger kabaneroIndexURL: %s, directory to store trigger: %s", kabaneroIndexURL, dir)
-	}
-	kabaneroIndexBytes, err := ReadHTTPURL(kabaneroIndexURL)
-	if err != nil {
-		return err
-	}
-	if klog.V(5) {
-		klog.Infof("Retrieved kabanero index file: %s", string(kabaneroIndexBytes))
-	}
-	kabaneroIndexMap, err := YAMLToMap(kabaneroIndexBytes)
-	if err != nil {
-		return err
-	}
-	triggerURL, triggerChkSum, err := GetTriggerURL(kabaneroIndexMap, verifyChkSum)
-	if err != nil {
-		return err
-	}
-
-	if klog.V(5) {
-		klog.Infof("Found trigger with URL %s and sha256 checksum of %s", triggerURL, triggerChkSum)
-	}
-
-	triggerArchiveName := filepath.Join(dir, "incubator.trigger.tar.gz")
-	err = downloadFileTo(triggerURL, triggerArchiveName)
-	if err != nil {
-		return err
-	}
-
-	// Verify that the checksum matches the value found in kabanero-index.yaml
-	if verifyChkSum {
-		chkSum, err := sha256sum(triggerArchiveName)
-		if err != nil {
-			return fmt.Errorf("unable to calculate checksum of file %s: %s", triggerArchiveName, err)
-		}
-
-		if klog.V(5) {
-			klog.Infof("Calculated sha256 checksum of file %s: %s", triggerArchiveName, chkSum)
-		}
-
-		if chkSum != triggerChkSum {
-			klog.Fatalf("trigger collection checksum does not match the checksum from the Kabanero index: found: %s, expected: %s",
-				chkSum, triggerChkSum)
-		}
-	}
-
-	// Untar the triggers collection
-	triggerReadCloser, err := os.Open(triggerArchiveName)
-	if err != nil {
-		return err
-	}
-
-	err = DecompressGzipTar(triggerReadCloser, dir)
-	return err
 }

@@ -1,20 +1,26 @@
-package main
+package messages_test
 
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/kabanero-io/kabanero-events/pkg/messages"
 	"gopkg.in/yaml.v2"
 	"sync"
 	"testing"
 	"time"
 )
 
+const TEST_DATA_DIR = "../../test_data"
+
+func getEventDefinitions(provider string) string {
+	return fmt.Sprintf("%s/%s/eventDefinitions.yaml", TEST_DATA_DIR, provider)
+}
+
 /*
  * TestReadEventProviders tests that event providers can be unmarshaled.
  */
 func TestReadEventProviders(t *testing.T) {
-	eventProviders, err := initializeEventProviders("test_data/providers0/eventDefinitions.yaml")
-
+	eventProviders, err := messages.InitializeEventProviders(getEventDefinitions("providers0"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,8 +38,7 @@ func TestProviderListenAndSend(t *testing.T) {
 	// Comment out following line to run the example
 	t.SkipNow()
 
-	eventProviders, err := initializeEventProviders("test_data/providers0/eventDefinitions.yaml")
-
+	eventProviders, err := messages.InitializeEventProviders(getEventDefinitions("providers0"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,8 +96,7 @@ func TestProviderSendAndReceive(t *testing.T) {
 	// Comment out following line to run the example
 	t.SkipNow()
 
-	eventProviders, err := initializeEventProviders("test_data/providers0/eventDefinitions.yaml")
-
+	eventProviders, err := messages.InitializeEventProviders(getEventDefinitions("providers0"))
 	if err != nil {
 		t.Fatal(err)
 	}
