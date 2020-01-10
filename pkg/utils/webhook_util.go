@@ -40,6 +40,7 @@ const (
 	CHKSUM   = "sha256"
 )
 
+// ReadFile Reads a file and returns the bytes.
 func ReadFile(fileName string) ([]byte, error) {
 	ret := make([]byte, 0)
 	file, err := os.Open(fileName)
@@ -56,6 +57,7 @@ func ReadFile(fileName string) ([]byte, error) {
 	return ret, nil
 }
 
+// ReadJSON reads a JSON file and returns it as an unstructured.Unstructured object.
 func ReadJSON(fileName string) (*unstructured.Unstructured, error) {
 	bytes, err := ReadFile(fileName)
 	if err != nil {
@@ -102,7 +104,7 @@ func getHTTPURLReaderCloser(url string) (io.ReadCloser, error) {
 	return nil, fmt.Errorf("unable to read from url %s, http status: %s", url, response.Status)
 }
 
-/* Read remote file from URL and return bytes */
+// ReadHTTPURL Read remote file from URL and return bytes
 func ReadHTTPURL(url string) ([]byte, error) {
 	readCloser, err := getHTTPURLReaderCloser(url)
 	if err != nil {
@@ -113,6 +115,7 @@ func ReadHTTPURL(url string) ([]byte, error) {
 	return bytes, err
 }
 
+// YAMLToMap Converts a YAML byte array to a map.
 func YAMLToMap(bytes []byte) (map[string]interface{}, error) {
 	var myMap map[string]interface{}
 	err := yaml.Unmarshal(bytes, &myMap)
@@ -122,7 +125,7 @@ func YAMLToMap(bytes []byte) (map[string]interface{}, error) {
 	return myMap, nil
 }
 
-/* Get the URL and sha256 checksum of where the trigger is stored */
+// GetTriggerURL Get the URL and sha256 checksum of where the trigger is stored
 func GetTriggerURL(collection map[string]interface{}, verifyChkSum bool) (string, string, error) {
 	triggersObj, ok := collection[TRIGGERS]
 	if !ok {
@@ -176,9 +179,10 @@ func GetTriggerURL(collection map[string]interface{}, verifyChkSum bool) (string
 	return retURL, retChkSum, nil
 }
 
-/* Download the trigger.tar.gz and unpack into the directory
-   kabaneroIndexUrl: URL that serves kabanero-index.yaml
-   dir: directory to unpack the trigger.tar.gz
+/*
+DownloadTrigger Download the trigger.tar.gz and unpack into the directory
+  kabaneroIndexUrl: URL that serves kabanero-index.yaml
+  dir: directory to unpack the trigger.tar.gz
 */
 func DownloadTrigger(kabaneroIndexURL string, dir string, verifyChkSum bool) error {
 	if klog.V(5) {
@@ -239,7 +243,7 @@ func DownloadTrigger(kabaneroIndexURL string, dir string, verifyChkSum bool) err
 	return err
 }
 
-/* Merge a directory path with a relative path. Return error if the rectory not a prefix of the merged path after the merge  */
+// MergePathWithErrorCheck Merge a directory path with a relative path. Return error if the rectory not a prefix of the merged path after the merge
 func MergePathWithErrorCheck(dir string, toMerge string) (string, error) {
 	dest := filepath.Join(dir, toMerge)
 	dir, err := filepath.Abs(dir)
@@ -273,7 +277,7 @@ func sha256sum(filePath string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-/* gunzip and then untar into a directory */
+// DecompressGzipTar Decompresses and extracts a tar.gz file.
 func DecompressGzipTar(readCloser io.ReadCloser, dir string) error {
 	defer readCloser.Close()
 

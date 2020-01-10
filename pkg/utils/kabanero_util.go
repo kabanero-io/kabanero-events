@@ -13,7 +13,9 @@ import (
 )
 
 const (
-	KUBENAMESPACE    = "KUBE_NAMESPACE"
+	// KUBENAMESPACE the namespace that kabanero is running in
+	KUBENAMESPACE = "KUBE_NAMESPACE"
+	// DEFAULTNAMESPACE the default namespace name
 	DEFAULTNAMESPACE = "kabanero"
 )
 
@@ -21,7 +23,7 @@ var (
 	kabaneroNamespace string
 )
 
-/* Get namespace of where kabanero is installed */
+// GetKabaneroNamespace Get namespace of where kabanero is installed
 func GetKabaneroNamespace() string {
 	kabaneroNamespace = os.Getenv(KUBENAMESPACE)
 	if kabaneroNamespace == "" {
@@ -31,7 +33,7 @@ func GetKabaneroNamespace() string {
 	return kabaneroNamespace
 }
 
-/* Get the URL to kabanero-index.yaml */
+// GetKabaneroIndexURL Get the URL to kabanero-index.yaml
 func GetKabaneroIndexURL(namespace string) (string, error) {
 	if klog.V(5) {
 		klog.Infof("Entering getKabaneroIndexURL")
@@ -157,8 +159,7 @@ func GetKabaneroIndexURL(namespace string) (string, error) {
 }
 
 /*
- Find the user/token for a GitHub API key
- The format of the secret:
+GetURLAPIToken Find the user/token for a GitHub API key. The format of the secret:
 apiVersion: v1
 kind: Secret
 metadata:

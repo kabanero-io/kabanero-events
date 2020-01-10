@@ -52,6 +52,7 @@ var (
 	messageProviders map[string]MessageProvider
 )
 
+// InitializeEventProviders initializes the message providers and event sources and destinations.
 func InitializeEventProviders(fileName string) (*EventDefinition, error) {
 	if klog.V(5) {
 		klog.Info("Initializing event providers...")
@@ -99,6 +100,7 @@ func InitializeEventProviders(fileName string) (*EventDefinition, error) {
 	return eventProviders, nil
 }
 
+// GetEventProviders returns a list of event providers.
 func GetEventProviders() *EventDefinition {
 	return eventProviders
 }

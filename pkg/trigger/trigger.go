@@ -20,8 +20,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/kabanero-io/kabanero-events/pkg/utils"
 	"github.com/kabanero-io/kabanero-events/pkg/messages"
+	"github.com/kabanero-io/kabanero-events/pkg/utils"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	//	"os"
@@ -48,7 +48,7 @@ import (
 )
 
 var (
-	triggerProc *TriggerProcessor
+	triggerProc *Processor
 )
 
 /* Trigger file syntax
@@ -204,27 +204,30 @@ func (td *EventTriggerDefinition) isDryRun() bool {
 	return false
 }
 
+// EventTriggerDefinition represents an event trigger definition
 type EventTriggerDefinition struct {
 	Setting       []map[interface{}]interface{}            // all settings
 	EventTriggers map[string][]map[interface{}]interface{} // event source name to triggers
 	Functions     map[string]map[interface{}]interface{}   // function name to function body
 }
 
-type TriggerProcessor struct {
+// Processor contains the event trigger definition and the file it was loaded from
+type Processor struct {
 	triggerDef *EventTriggerDefinition
 	triggerDir string // directory where trigger file is stored
 }
 
-func NewTriggerProcessor() *TriggerProcessor {
-	triggerProc = &TriggerProcessor{}
+// NewProcessor creates a new trigger processor.
+func NewProcessor() *Processor {
+	triggerProc = &Processor{}
 	return triggerProc
 }
 
-/* Initialize trigger directory */
-func (tp *TriggerProcessor) Initialize(dir string) error {
+// Initialize initializes a Processor with the specified trigger directory
+func (tp *Processor) Initialize(dir string) error {
 	if klog.V(6) {
-		klog.Infof("TriggerProcessor.initialize %v", dir)
-		defer klog.Infof("Leaving TriggerProcessor.initialize %v", dir)
+		klog.Infof("Processor.initialize %v", dir)
+		defer klog.Infof("Leaving Processor.initialize %v", dir)
 	}
 	var err error
 	tp.triggerDef = &EventTriggerDefinition{
@@ -275,7 +278,8 @@ func messageListener(provider messages.MessageProvider, node *messages.EventNode
 	}
 }
 
-func (tp *TriggerProcessor) StartListeners(providers *messages.EventDefinition) error {
+// StartListeners starts all event source listeners.
+func (tp *Processor) StartListeners(providers *messages.EventDefinition) error {
 	triggers := tp.triggerDef.EventTriggers
 	for dest := range triggers {
 		destNode := providers.GetEventDestination(dest)
@@ -338,10 +342,11 @@ func parseTrigger(trigger map[interface{}]interface{}) ([]string, string, []inte
 	return eventSourceArray, input, body, nil
 }
 
-func (tp *TriggerProcessor) ProcessMessage(message map[string]interface{}, eventSource string) ([]map[string]interface{}, error) {
+// ProcessMessage processes an event message.
+func (tp *Processor) ProcessMessage(message map[string]interface{}, eventSource string) ([]map[string]interface{}, error) {
 	if klog.V(5) {
-		klog.Infof("Entering TriggerProcessor.ProcessMessage. message: %v, eventSource: %v", message, eventSource)
-		defer klog.Infof("Leaving TriggerProcessor.ProcessMessage")
+		klog.Infof("Entering Processor.ProcessMessage. message: %v, eventSource: %v", message, eventSource)
+		defer klog.Infof("Leaving Processor.ProcessMessage")
 	}
 
 	if klog.V(5) {
@@ -969,6 +974,7 @@ func normalizeArrayInterface(val []interface{}) ([]interface{}, error) {
 }
 */
 
+// ReadTriggerDefinition reads the event trigger definition from a file.
 func ReadTriggerDefinition(fileName string, td *EventTriggerDefinition) error {
 	if klog.V(5) {
 		klog.Infof("enter readTriggerDefinitions %v", fileName)
@@ -1176,6 +1182,7 @@ func substituteTemplateFile(fileName string, variables interface{}) (string, err
 	return substituted, err
 }
 
+// SubstituteTemplate replaces all values in a template.
 func SubstituteTemplate(templateStr string, variables interface{}) (string, error) {
 	t, err := template.New("kabanero").Parse(templateStr)
 	if err != nil {
@@ -1228,7 +1235,13 @@ func createResource(resourceStr string) error {
 	if klog.V(5) {
 		klog.Infof("Resources before creating : %v", unstructuredObj)
 	}
-	gvr := schema.GroupVersionResource{group, version, resource}
+
+	gvr := schema.GroupVersionResource{
+		Group:    group,
+		Version:  version,
+		Resource: resource,
+	}
+
 	if err == nil {
 		var intfNoNS = dynamicClient.Resource(gvr)
 		var intf dynamic.ResourceInterface
@@ -1358,7 +1371,7 @@ var lastTime = time.Now().UTC()
 var mutex = &sync.Mutex{}
 
 /*
-Get timestamp. Timestamp format is UTC time expressed as:
+GetTimestamp Get timestamp. Timestamp format is UTC time expressed as:
       YYYYMMDDHHMMSSL, where L is last digits in multiples of 1/10 second.
 WARNING: This function may sleep up to 0.1 second per request if there are too many concurent requests
 */

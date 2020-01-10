@@ -53,6 +53,7 @@ var (
 	dynamicClient dynamic.Interface
 )
 
+// NewKubeConfig Creates a new kube config
 func NewKubeConfig(masterURL, kubeconfigPath string) (*rest.Config, error) {
 	var cfg *rest.Config
 	var err error
@@ -72,34 +73,38 @@ func NewKubeConfig(masterURL, kubeconfigPath string) (*rest.Config, error) {
 	return cfg, err
 }
 
+// NewKubeClient Creates a new kube client
 func NewKubeClient(kubeConfig *rest.Config) (*kubernetes.Clientset, error) {
 	var err error
 	kubeClient, err = kubernetes.NewForConfig(kubeConfig)
 	return kubeClient, err
 }
 
+// NewDynamicClient Creates a new dynamic client
 func NewDynamicClient(kubeConfig *rest.Config) (dynamic.Interface, error) {
 	var err error
 	dynamicClient, err = dynamic.NewForConfig(kubeConfig)
 	return dynamicClient, err
 }
 
+// GetKubeClient Gets the kube client
 func GetKubeClient() *kubernetes.Clientset {
 	return kubeClient
 }
 
+// GetDynamicClient Gets the dynamic client
 func GetDynamicClient() dynamic.Interface {
 	return dynamicClient
 }
 
-/* Convert a name to domain name format.
-   The name must
-    - Start with [a-z0-9]. If not, "0" is prepended.
-    - lower case. If not, lower case is used.
-    - contain only '.', '-', and [a-z0-9]. If not, "." is used insteaad.
-    - end with alpha numeric characters. Otherwise, '0' is appended
-    - can't have consecutive '.'.  Consecutive ".." is substituted with ".".
-   Returns the empty string if the name is empty after conversion
+/*
+ToDomainName Convert a name to domain name format. The name must:
+  - Start with [a-z0-9]. If not, "0" is prepended.
+  - lower case. If not, lower case is used.
+  - contain only '.', '-', and [a-z0-9]. If not, "." is used insteaad.
+  - end with alpha numeric characters. Otherwise, '0' is appended
+  - can't have consecutive '.'.  Consecutive ".." is substituted with ".".
+Returns the empty string if the name is empty after conversion
 */
 func ToDomainName(name string) string {
 	maxLength := maxNameLength
@@ -157,12 +162,12 @@ func ToDomainName(name string) string {
 	return retStr[0:strLen-2] + "0"
 }
 
-/* Convert the  name part of  a label
-   The name must
-   - Start with [a-z0-9A-Z]. If not, "0" is prepended.
-   - End with [a-z0-9A-Z]. If not, "0" is appended
-   - Intermediate characters can only be: [a-z0-9A-Z] or '_', '-', and '.' If not, '.' is used.
-   - be maximum maxLabelLength characters long
+/*
+ToLabelName Convert the  name part of  a label. The name must:
+  - Start with [a-z0-9A-Z]. If not, "0" is prepended.
+  - End with [a-z0-9A-Z]. If not, "0" is appended
+  - Intermediate characters can only be: [a-z0-9A-Z] or '_', '-', and '.' If not, '.' is used.
+  - be maximum maxLabelLength characters long
 */
 func ToLabelName(name string) string {
 	chars := []byte(name)
@@ -216,7 +221,7 @@ func ToLabelName(name string) string {
 	}
 }
 
-/* Convert a string to Kubernetes label format. */
+// ToLabel Convert a string to Kubernetes label format.
 func ToLabel(input string) string {
 	slashIndex := strings.Index(input, "/")
 	var prefix, label string

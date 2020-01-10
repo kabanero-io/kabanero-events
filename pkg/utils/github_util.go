@@ -98,9 +98,10 @@ func getRepositoryInfo(body map[string]interface{}, repositoryEvent string) (str
 	return owner, name, htmlURL, ref, nil
 }
 
-/* Download YAML from Repository.
-header: HTTP header from webhook
-bodyMap: HTTP  message body from webhook
+/*
+DownloadYAML Downloads a YAML file from a git repository.
+  header: HTTP header from webhook
+  bodyMap: HTTP  message body from webhook
 */
 func DownloadYAML(header map[string][]string, bodyMap map[string]interface{}, fileName string) (map[string]interface{}, bool, error) {
 
@@ -135,7 +136,7 @@ func DownloadYAML(header map[string][]string, bodyMap map[string]interface{}, fi
 	return retMap, found, err
 }
 
-// Download file and return: bytes of the file, true if file exists, and any error
+// DownloadFileFromGithub Downloads a file and returns: bytes of the file, true if file exists, and any error
 func DownloadFileFromGithub(owner, repository, fileName, ref, githubURL, user, token string, isEnterprise bool) ([]byte, bool, error) {
 
 	if klog.V(5) {
@@ -169,7 +170,7 @@ func DownloadFileFromGithub(owner, repository, fileName, ref, githubURL, user, t
 
 	var options *github.RepositoryContentGetOptions
 	if ref != "" {
-		options = &github.RepositoryContentGetOptions{ref}
+		options = &github.RepositoryContentGetOptions{Ref: ref}
 	}
 
 	/*

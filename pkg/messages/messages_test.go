@@ -81,10 +81,13 @@ func TestProviderListenAndSend(t *testing.T) {
 			t.Fatalf("unable to find provider referenced by event destination '%s'", node.Name)
 		}
 		wg.Add(1)
-		go func() {
-			provider.Send(node, []byte(msg), nil)
+		go func(node *messages.EventNode) {
+			err := provider.Send(node, []byte(msg), nil)
+			if err != nil {
+				t.Errorf("unable to send event: %v", err)
+			}
 			wg.Done()
-		}()
+		}(node)
 	}
 	wg.Wait()
 }
@@ -138,10 +141,13 @@ func TestProviderSendAndReceive(t *testing.T) {
 			t.Fatalf("unable to find provider referenced by event destination '%s'", node.Name)
 		}
 		wg.Add(1)
-		go func() {
-			provider.Send(node, []byte(msg), nil)
+		go func(node *messages.EventNode) {
+			err := provider.Send(node, []byte(msg), nil)
+			if err != nil {
+				t.Errorf("unable to send event: %v", err)
+			}
 			wg.Done()
-		}()
+		}(node)
 	}
 	wg.Wait()
 

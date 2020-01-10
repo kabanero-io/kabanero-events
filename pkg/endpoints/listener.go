@@ -26,8 +26,11 @@ import (
 )
 
 const (
-	HEADER             = "header"
-	BODY               = "body"
+	// HEADER Message key containing request headers
+	HEADER = "header"
+	// BODY Message key containing request payload
+	BODY = "body"
+	// WEBHOOKDESTINATION GitHub event destination
 	WEBHOOKDESTINATION = "github"
 )
 
@@ -85,7 +88,7 @@ func listenerHandler(writer http.ResponseWriter, req *http.Request) {
 	writer.WriteHeader(http.StatusAccepted)
 }
 
-/* Creates a new event listener on port 9080 */
+// NewListener creates a new event listener on port 9080
 func NewListener() error {
 	klog.Infof("Starting listener on port 9080")
 	http.HandleFunc("/webhook", listenerHandler)
@@ -93,7 +96,7 @@ func NewListener() error {
 	return err
 }
 
-/* Creates a new TLS event listener on port 9443 */
+// NewListenerTLS creates a new TLS event listener on port 9443
 func NewListenerTLS(tlsCertPath, tlsKeyPath string) error {
 	klog.Infof("Starting TLS listener on port 9443")
 	if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
