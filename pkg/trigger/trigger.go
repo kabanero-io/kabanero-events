@@ -47,10 +47,6 @@ import (
 	"k8s.io/klog"
 )
 
-var (
-	triggerProc *Processor
-)
-
 /* Trigger file syntax
 
 keyword: block, default, if, switch
@@ -213,24 +209,25 @@ type EventTriggerDefinition struct {
 
 // Processor contains the event trigger definition and the file it was loaded from
 type Processor struct {
-	triggerDef *EventTriggerDefinition
-	triggerDir string // directory where trigger file is stored
+	triggerDef       *EventTriggerDefinition
+	triggerDir       string // directory where trigger file is stored
+	triggerFuncDecls cel.EnvOption
+	triggerFuncs     cel.ProgramOption
 }
 
 // NewProcessor creates a new trigger processor.
 func NewProcessor() *Processor {
-	triggerProc = &Processor{}
-	return triggerProc
+	return &Processor{}
 }
 
 // Initialize initializes a Processor with the specified trigger directory
-func (tp *Processor) Initialize(dir string) error {
+func (p *Processor) Initialize(dir string) error {
 	if klog.V(6) {
 		klog.Infof("Processor.initialize %v", dir)
 		defer klog.Infof("Leaving Processor.initialize %v", dir)
 	}
 	var err error
-	tp.triggerDef = &EventTriggerDefinition{
+	p.triggerDef = &EventTriggerDefinition{
 		Setting:       make([]map[interface{}]interface{}, 0),
 		EventTriggers: make(map[string][]map[interface{}]interface{}, 0),
 		Functions:     make(map[string]map[interface{}]interface{}, 0),
@@ -243,16 +240,19 @@ func (tp *Processor) Initialize(dir string) error {
 		return fmt.Errorf("unable to locate trigger files at directory %v", dir)
 	}
 	for _, fileName := range files {
-		err = ReadTriggerDefinition(fileName, tp.triggerDef)
+		err = ReadTriggerDefinition(fileName, p.triggerDef)
 		if err != nil {
 			return err
 		}
 	}
-	tp.triggerDir = dir
+	p.triggerDir = dir
+
+	// Initialize CEL functions
+	p.initCELFuncs()
 	return nil
 }
 
-func messageListener(provider messages.MessageProvider, node *messages.EventNode) {
+func (p *Processor) messageListener(provider messages.MessageProvider, node *messages.EventNode) {
 	klog.Infof("Starting listener event destination %v", node.Name)
 	for {
 		buf, err := provider.Receive(node)
@@ -269,7 +269,7 @@ func messageListener(provider messages.MessageProvider, node *messages.EventNode
 			klog.Errorf("Unable to unarmshal message from node %v", node.Name)
 			continue
 		}
-		_, err = triggerProc.ProcessMessage(messageMap, node.Name)
+		_, err = p.ProcessMessage(messageMap, node.Name)
 		if err != nil {
 			klog.Errorf("Error processing message from destination %v. Message: %v, Error: %v", node.Name, messageMap, err)
 		} else if klog.V(6) {
@@ -279,8 +279,8 @@ func messageListener(provider messages.MessageProvider, node *messages.EventNode
 }
 
 // StartListeners starts all event source listeners.
-func (tp *Processor) StartListeners(providers *messages.EventDefinition) error {
-	triggers := tp.triggerDef.EventTriggers
+func (p *Processor) StartListeners(providers *messages.EventDefinition) error {
+	triggers := p.triggerDef.EventTriggers
 	for dest := range triggers {
 		destNode := providers.GetEventDestination(dest)
 		if destNode == nil {
@@ -294,7 +294,7 @@ func (tp *Processor) StartListeners(providers *messages.EventDefinition) error {
 		if err != nil {
 			return fmt.Errorf("unable to subscribe to provider %v", destNode.ProviderRef)
 		}
-		go messageListener(provider, destNode)
+		go p.messageListener(provider, destNode)
 	}
 	return nil
 }
@@ -307,7 +307,7 @@ func (tp *Processor) StartListeners(providers *messages.EventDefinition) error {
 	   input: string
 	   body: []interface{}
 */
-func parseTrigger(trigger map[interface{}]interface{}) ([]string, string, []interface{}, error) {
+func (p *Processor) parseTrigger(trigger map[interface{}]interface{}) ([]string, string, []interface{}, error) {
 	eventSourceArray := make([]string, 0)
 	eventSourceObj, ok := trigger[EVENTSOURCE]
 	if !ok {
@@ -343,7 +343,7 @@ func parseTrigger(trigger map[interface{}]interface{}) ([]string, string, []inte
 }
 
 // ProcessMessage processes an event message.
-func (tp *Processor) ProcessMessage(message map[string]interface{}, eventSource string) ([]map[string]interface{}, error) {
+func (p *Processor) ProcessMessage(message map[string]interface{}, eventSource string) ([]map[string]interface{}, error) {
 	if klog.V(5) {
 		klog.Infof("Entering Processor.ProcessMessage. message: %v, eventSource: %v", message, eventSource)
 		defer klog.Infof("Leaving Processor.ProcessMessage")
@@ -352,7 +352,7 @@ func (tp *Processor) ProcessMessage(message map[string]interface{}, eventSource 
 	if klog.V(5) {
 		klog.Infof("before getting triggerArray")
 	}
-	triggerArray, ok := tp.triggerDef.EventTriggers[eventSource]
+	triggerArray, ok := p.triggerDef.EventTriggers[eventSource]
 	if !ok {
 		err := fmt.Errorf("no trigger found for event source %v", eventSource)
 		klog.Error(err)
@@ -365,7 +365,7 @@ func (tp *Processor) ProcessMessage(message map[string]interface{}, eventSource 
 	savedVariables := make([]map[string]interface{}, 0)
 	for _, trigger := range triggerArray {
 		/* evaluate all trigger definitions for the event source*/
-		eventSources, inputVariable, bodyArray, err := parseTrigger(trigger)
+		eventSources, inputVariable, bodyArray, err := p.parseTrigger(trigger)
 		if err != nil {
 			klog.Error(err)
 			return nil, err
@@ -374,7 +374,7 @@ func (tp *Processor) ProcessMessage(message map[string]interface{}, eventSource 
 			klog.Infof("ProcessMessage after parseTrigger: eventSources: %v", eventSources)
 		}
 
-		env, variables, err := initializeCELEnv(message, inputVariable)
+		env, variables, err := p.initializeCELEnv(message, inputVariable)
 		if err != nil {
 			return nil, err
 		}
@@ -383,7 +383,7 @@ func (tp *Processor) ProcessMessage(message map[string]interface{}, eventSource 
 		}
 
 		depth := 1
-		_, err = evalArrayObject(env, variables, bodyArray, depth)
+		_, err = p.evalArrayObject(env, variables, bodyArray, depth)
 		if err != nil {
 			klog.Errorf("Error evaluating trigger %v: ERROR MESSAGE: %v", trigger, err)
 			klog.Fatal(err)
@@ -406,7 +406,7 @@ func (tp *Processor) ProcessMessage(message map[string]interface{}, eventSource 
 	 cel.Env: updated execution environment
 	 error: any error
 */
-func evalArrayObject(env cel.Env, variables map[string]interface{}, bodyArray []interface{}, depth int) (cel.Env, error) {
+func (p *Processor) evalArrayObject(env cel.Env, variables map[string]interface{}, bodyArray []interface{}, depth int) (cel.Env, error) {
 
 	var err error
 	for _, objectObj := range bodyArray {
@@ -418,7 +418,7 @@ func evalArrayObject(env cel.Env, variables map[string]interface{}, bodyArray []
 		switch {
 		case (flags & IfFlag) != 0:
 			/* If statement, only allow If or If and BODY */
-			env, _, err := evalIfWithSyntaxCheck(env, variables, object, numKeywords, flags, depth)
+			env, _, err := p.evalIfWithSyntaxCheck(env, variables, object, numKeywords, flags, depth)
 			if err != nil {
 				return env, err
 			}
@@ -432,7 +432,7 @@ func evalArrayObject(env cel.Env, variables map[string]interface{}, bodyArray []
 				err = fmt.Errorf("switch also contains assignment: %v", object)
 				return env, err
 			}
-			env, err := evalSwitch(env, variables, object, numKeywords, flags, depth)
+			env, err := p.evalSwitch(env, variables, object, numKeywords, flags, depth)
 			if err != nil {
 				return env, err
 			}
@@ -447,7 +447,7 @@ func evalArrayObject(env cel.Env, variables map[string]interface{}, bodyArray []
 				err = fmt.Errorf("body also contains assignment: %v", object)
 				return env, err
 			}
-			env, err := evalBody(env, variables, object, numKeywords, flags, depth)
+			env, err := p.evalBody(env, variables, object, numKeywords, flags, depth)
 			if err != nil {
 				return env, err
 			}
@@ -460,7 +460,7 @@ func evalArrayObject(env cel.Env, variables map[string]interface{}, bodyArray []
 				err = fmt.Errorf("multiple assignments in one object: %v", object)
 				return env, err
 			}
-			env, err = evalAssignment(env, variables, object, numKeywords, flags, depth)
+			env, err = p.evalAssignment(env, variables, object, numKeywords, flags, depth)
 			if err != nil {
 				return env, err
 			}
@@ -469,7 +469,7 @@ func evalArrayObject(env cel.Env, variables map[string]interface{}, bodyArray []
 	return env, nil
 }
 
-func evalAssignment(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeywords int, flags uint, depth int) (cel.Env, error) {
+func (p *Processor) evalAssignment(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeywords int, flags uint, depth int) (cel.Env, error) {
 	if klog.V(6) {
 		klog.Infof("Entering evalAssignment object: %v", object)
 		defer klog.Infof("Leaving evalAssignment object")
@@ -507,7 +507,7 @@ func evalAssignment(env cel.Env, variables map[string]interface{}, object map[in
 		default:
 			return env, fmt.Errorf("Value of variables not stored as  YAML primitive types or string when assgining %v to %v. Type of value is %T", variableName, valObj, valObj)
 		}
-		env, err = setOneVariable(env, variableName, val, variables)
+		env, err = p.setOneVariable(env, variableName, val, variables)
 		if err != nil {
 			return env, err
 		}
@@ -518,19 +518,19 @@ func evalAssignment(env cel.Env, variables map[string]interface{}, object map[in
 /*
  * Evaluate body
  */
-func evalBody(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeyword int, flags uint, depth int) (cel.Env, error) {
+func (p *Processor) evalBody(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeyword int, flags uint, depth int) (cel.Env, error) {
 	/* check if recursive body exists */
 	nestedBodyObj := object[BODY]
 	nestedBody, ok := nestedBodyObj.([]interface{})
 	if ok {
-		return evalArrayObject(env, variables, nestedBody, depth)
+		return p.evalArrayObject(env, variables, nestedBody, depth)
 	}
 
 	err := fmt.Errorf("body %v contains nested body that is not []interface, but of type %T", nestedBodyObj, nestedBody)
 	return env, err
 }
 
-func evalIfWithSyntaxCheck(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeywords int, flags uint, depth int) (cel.Env, bool, error) {
+func (p *Processor) evalIfWithSyntaxCheck(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeywords int, flags uint, depth int) (cel.Env, bool, error) {
 	if klog.V(6) {
 		klog.Infof("evalIfWithSyntaxCheck : %v", object)
 	}
@@ -553,7 +553,7 @@ func evalIfWithSyntaxCheck(env cel.Env, variables map[string]interface{}, object
 	if !ok {
 		return env, false, fmt.Errorf("condition of if object not a string: %v", object)
 	}
-	boolVal, err := evalCondition(env, condition, variables)
+	boolVal, err := p.evalCondition(env, condition, variables)
 	if err != nil {
 		return env, false, err
 	}
@@ -572,23 +572,23 @@ func evalIfWithSyntaxCheck(env cel.Env, variables map[string]interface{}, object
 	_, ok = object[BODY]
 	if ok {
 		/* if statement also contains body */
-		env, err = evalBody(env, variables, object, numKeywords, flags, depth)
+		env, err = p.evalBody(env, variables, object, numKeywords, flags, depth)
 		return env, true, err
 	}
 
 	_, ok = object[SWITCH]
 	if ok {
 		/* if statement also contains switch */
-		env, err = evalSwitch(env, variables, object, numKeywords, flags, depth)
+		env, err = p.evalSwitch(env, variables, object, numKeywords, flags, depth)
 		return env, true, err
 	}
 
 	/* perform assignments */
-	env, err = evalAssignment(env, variables, object, numKeywords, flags, depth)
+	env, err = p.evalAssignment(env, variables, object, numKeywords, flags, depth)
 	return env, true, err
 }
 
-func evalSwitch(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeywords int, flags uint, depth int) (cel.Env, error) {
+func (p *Processor) evalSwitch(env cel.Env, variables map[string]interface{}, object map[interface{}]interface{}, numKeywords int, flags uint, depth int) (cel.Env, error) {
 	var err error
 	switchObj, ok := object[SWITCH]
 	if !ok {
@@ -609,7 +609,7 @@ func evalSwitch(env cel.Env, variables map[string]interface{}, object map[interf
 		_, ifOK := arrayElement[IF]
 		if ifOK {
 			/* evaluate the if statement */
-			env, conditionTrue, err := evalIfWithSyntaxCheck(env, variables, arrayElement, switchCaseNumKeywords, switchCaseFlags, depth)
+			env, conditionTrue, err := p.evalIfWithSyntaxCheck(env, variables, arrayElement, switchCaseNumKeywords, switchCaseFlags, depth)
 			if err != nil || conditionTrue {
 				return env, err
 			}
@@ -637,7 +637,7 @@ func evalSwitch(env cel.Env, variables map[string]interface{}, object map[interf
 	/* evaluate defaults */
 
 	if defaultArray != nil {
-		env, err = evalArrayObject(env, variables, defaultArray, depth)
+		env, err = p.evalArrayObject(env, variables, defaultArray, depth)
 		if err != nil {
 			return env, err
 		}
@@ -656,9 +656,9 @@ func shallowCopy(originalMap map[string]interface{}) map[string]interface{} {
 
 /* Get initial CEL environment
  */
-func initializeEmptyCELEnv() (cel.Env, error) {
+func (p *Processor) initializeEmptyCELEnv() (cel.Env, error) {
 	/* initialize empty CEL environment with additional functions */
-	additionalFuncs := getAdditionalCELFuncDecls()
+	additionalFuncs := p.getAdditionalCELFuncDecls()
 	//	klog.Infof("Additional Func Decls: %v", additionalFuncs)
 	return cel.NewEnv(additionalFuncs)
 }
@@ -668,14 +668,14 @@ Return: cel.Env: the CEL environment
 	map[string]interface{}: variables used during substitution
 	error: any error encountered
 */
-func initializeCELEnv(message map[string]interface{}, inputVariableName string) (cel.Env, map[string]interface{}, error) {
+func (p *Processor) initializeCELEnv(message map[string]interface{}, inputVariableName string) (cel.Env, map[string]interface{}, error) {
 	if klog.V(5) {
 		klog.Infof("entering initializeCELEnv")
 		defer klog.Infof("Leaving initializeCELEnv")
 	}
 
 	/* initialize empty CEL environment with additional functions */
-	env, err := initializeEmptyCELEnv()
+	env, err := p.initializeEmptyCELEnv()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -692,7 +692,7 @@ func initializeCELEnv(message map[string]interface{}, inputVariableName string) 
 	return env, variables, nil
 }
 
-func setOneVariable(env cel.Env, name string, val string, variables map[string]interface{}) (cel.Env, error) {
+func (p *Processor) setOneVariable(env cel.Env, name string, val string, variables map[string]interface{}) (cel.Env, error) {
 	if name == "" {
 		/* name not set */
 		return env, nil
@@ -708,7 +708,7 @@ func setOneVariable(env cel.Env, name string, val string, variables map[string]i
 	if issues != nil && issues.Err() != nil {
 		return env, fmt.Errorf("CEL check error when setting variable %s to %s, error: %v, existing variables: %v", name, val, issues.Err(), variables)
 	}
-	prg, err := env.Program(checked, getAdditionalCELFuncs())
+	prg, err := env.Program(checked, p.getAdditionalCELFuncs())
 	if err != nil {
 		return env, fmt.Errorf("CEL program error when setting variable %s to %s, error: %v", name, val, err)
 	}
@@ -1102,7 +1102,7 @@ func ReadTriggerDefinition(fileName string, td *EventTriggerDefinition) error {
 //	return nil, nil
 //}
 
-func evalCondition(env cel.Env, when string, variables map[string]interface{}) (bool, error) {
+func (p *Processor) evalCondition(env cel.Env, when string, variables map[string]interface{}) (bool, error) {
 	if when == "" {
 		/* unconditional */
 		return true, nil
@@ -1115,7 +1115,7 @@ func evalCondition(env cel.Env, when string, variables map[string]interface{}) (
 	if issues != nil && issues.Err() != nil {
 		return false, fmt.Errorf("error parsing condition %s, error: %v", when, issues.Err())
 	}
-	prg, err := env.Program(checked, getAdditionalCELFuncs())
+	prg, err := env.Program(checked, p.getAdditionalCELFuncs())
 	if err != nil {
 		return false, fmt.Errorf("error creating CEL program for condition %s, error: %v", when, err)
 	}
@@ -1391,7 +1391,7 @@ func GetTimestamp() string {
 }
 
 /* implementation of toDomainName for CEL */
-func toDomainNameCEL(param ref.Val) ref.Val {
+func (p *Processor) toDomainNameCEL(param ref.Val) ref.Val {
 	str, ok := param.(types.String)
 	if !ok {
 		return types.ValOrErr(param, "unexpected type '%v' passed to toDomainName", param.Type())
@@ -1400,7 +1400,7 @@ func toDomainNameCEL(param ref.Val) ref.Val {
 }
 
 /* implementation of toLabel for CEL */
-func toLabelCEL(param ref.Val) ref.Val {
+func (p *Processor) toLabelCEL(param ref.Val) ref.Val {
 	str, ok := param.(types.String)
 	if !ok {
 		return types.ValOrErr(param, "unexpected type '%v' passed to toLabel", param.Type())
@@ -1409,7 +1409,7 @@ func toLabelCEL(param ref.Val) ref.Val {
 }
 
 /* implementation of split for CEL */
-func splitCEL(strVal ref.Val, sepVal ref.Val) ref.Val {
+func (p *Processor) splitCEL(strVal ref.Val, sepVal ref.Val) ref.Val {
 	str, ok := strVal.(types.String)
 	if !ok {
 		return types.ValOrErr(strVal, "unexpected type '%v' passed as first parameter to function split", strVal.Type())
@@ -1424,12 +1424,12 @@ func splitCEL(strVal ref.Val, sepVal ref.Val) ref.Val {
 }
 
 /* Return next job ID */
-func jobIDCEL(values ...ref.Val) ref.Val {
+func (p *Processor) jobIDCEL(values ...ref.Val) ref.Val {
 	return types.String(GetTimestamp())
 }
 
 /* Return next job ID */
-func kabaneroConfigCEL(values ...ref.Val) ref.Val {
+func (p *Processor) kabaneroConfigCEL(values ...ref.Val) ref.Val {
 	ret := make(map[string]interface{})
 	ret[NAMESPACE] = utils.GetKabaneroNamespace()
 	return types.NewDynamicMap(types.DefaultTypeAdapter, ret)
@@ -1443,7 +1443,7 @@ func kabaneroConfigCEL(values ...ref.Val) ref.Val {
        map["exists"] is true if the file exists, or false if it doesn't exist
 	   map["content"], if set, is the actual file content, of type map[string]interface{}
 */
-func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
+func (p *Processor) downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
 	klog.Infof("downloadYAMLCEL first param: %v, second param: %v", webhookMessage, fileNameVal)
 
 	if webhookMessage.Value() == nil {
@@ -1504,7 +1504,7 @@ func downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val) ref.Val {
    param map[string]interface{}: param to pass to function
    Return interface{} : result
 */
-func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
+func (p *Processor) callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 	if klog.V(6) {
 		klog.Infof("callCEL first param: %v, second param: %v", functionVal, param)
 	}
@@ -1536,10 +1536,10 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 	}
 
 	if klog.V(6) {
-		klog.Infof("callCEL: getting functions:  %v ", triggerProc.triggerDef.Functions)
+		klog.Infof("callCEL: getting functions:  %v ", p.triggerDef.Functions)
 	}
 
-	functionDecl, ok := triggerProc.triggerDef.Functions[function]
+	functionDecl, ok := p.triggerDef.Functions[function]
 	if !ok {
 		klog.Errorf("callCEL function %v not found", function)
 		return types.ValOrErr(functionVal, "function %v not found", function)
@@ -1578,7 +1578,7 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 	}
 
 	variables := make(map[string]interface{})
-	env, err := initializeEmptyCELEnv()
+	env, err := p.initializeEmptyCELEnv()
 	if err != nil {
 		klog.Infof("callCEL function %v Unable to initialize CEL environment", function)
 		return types.ValOrErr(functionVal, "callCEL Unable to initialize CEL environment. Error: %v ", err)
@@ -1591,7 +1591,7 @@ func callCEL(functionVal ref.Val, param ref.Val) ref.Val {
 	}
 
 	depth := 1
-	_, err = evalArrayObject(env, variables, bodyArray, depth)
+	_, err = p.evalArrayObject(env, variables, bodyArray, depth)
 	if err != nil {
 		klog.Infof("callCEL error: %v", err)
 		return types.ValOrErr(param, "callCEL error evaluating function body. Error: %v ", err)
@@ -1647,7 +1647,7 @@ func convertToRefVal(outValueObj interface{}) (ref.Val, error) {
    variable Any: variable to pass to go template
    Return string : empty if OK, otherwise, error message
 */
-func applyResourcesCEL(dir ref.Val, variables ref.Val) ref.Val {
+func (p *Processor) applyResourcesCEL(dir ref.Val, variables ref.Val) ref.Val {
 	klog.Infof("applyResourcesCEL first param: %v, second param: %v", dir, variables)
 
 	if variables.Value() == nil {
@@ -1667,7 +1667,7 @@ func applyResourcesCEL(dir ref.Val, variables ref.Val) ref.Val {
 		return types.ValOrErr(dir, "unexpected type '%v' passed as first parameter to function applyResources. It should be string", dir.Type())
 	}
 
-	err := applyResourcesHelper(triggerProc.triggerDir, dirStr, variables.Value(), triggerProc.triggerDef.isDryRun())
+	err := applyResourcesHelper(p.triggerDir, dirStr, variables.Value(), p.triggerDef.isDryRun())
 	var ret ref.Val
 	if err != nil {
 		ret = types.String(fmt.Sprintf("applyResources error  applying template %v", err))
@@ -1786,7 +1786,7 @@ func convertToHeaderMap(value interface{}) (map[string][]string, error) {
    Return string : empty if OK, otherwise, error message
 */
 // func sendEventCEL(destination ref.Val, message ref.Val, context ref.Val) ref.Val
-func sendEventCEL(refs ...ref.Val) ref.Val {
+func (p *Processor) sendEventCEL(refs ...ref.Val) ref.Val {
 	if refs == nil {
 		klog.Error("sendEventCEL input is nil")
 		return types.ValOrErr(nil, "unexpected nil input to sendEventCEL.")
@@ -1839,7 +1839,7 @@ func sendEventCEL(refs ...ref.Val) ref.Val {
 	provider := eventProviders.GetMessageProvider(destNode.ProviderRef)
 	if provider == nil {
 		klog.Errorf("Unable to find a messageProvider with the name '%s'. Verify that is has been defined.", destNode.ProviderRef)
-		return types.ValOrErr(nil, "sendEventCEL Unable to find message povider %v", destNode.ProviderRef)
+		return types.ValOrErr(nil, "sendEventCEL Unable to find message provider %v", destNode.ProviderRef)
 	}
 
 	var header interface{} = nil
@@ -1850,7 +1850,7 @@ func sendEventCEL(refs ...ref.Val) ref.Val {
 		}
 	}
 
-	if triggerProc.triggerDef.isDryRun() {
+	if p.triggerDef.isDryRun() {
 		klog.Infof("sendEvent: dryrun is set. Event was not sent to destination '%s'", dest)
 		return types.String("")
 	}
@@ -1876,7 +1876,7 @@ func sendEventCEL(refs ...ref.Val) ref.Val {
         newHader : ' filter(header, " key.startsWith(\"X-Github\") || key.startsWith(\"github\")) '
 		newArray: ' filter(oldArray, " value < 10 " )
 */
-func filterCEL(message ref.Val, expression ref.Val) ref.Val {
+func (p *Processor) filterCEL(message ref.Val, expression ref.Val) ref.Val {
 	if klog.V(6) {
 		klog.Infof("filterCEL first param: %v, second param: %v", message, expression)
 	}
@@ -1916,7 +1916,7 @@ func filterCEL(message ref.Val, expression ref.Val) ref.Val {
 		for iter := messageValue.MapRange(); iter.Next(); {
 			key := iter.Key()
 			value := iter.Value()
-			err = filterMapEntry(retMap, key, value, expressionStr)
+			err = p.filterMapEntry(retMap, key, value, expressionStr)
 			if err != nil {
 				klog.Errorf("In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err)
 				return types.ValOrErr(message, "In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err)
@@ -1928,7 +1928,7 @@ func filterCEL(message ref.Val, expression ref.Val) ref.Val {
 		retArray := reflect.MakeSlice(reflect.SliceOf(messageType.Elem()), 0, 0)
 		for i := 0; i < messageValue.Len(); i++ {
 			value := messageValue.Index(i)
-			retArray, err = filterArraySlice(retArray, value, expressionStr)
+			retArray, err = p.filterArraySlice(retArray, value, expressionStr)
 			if err != nil {
 				klog.Errorf("In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err)
 				return types.ValOrErr(message, "In built-in function filter evaluation of condition %v resulted in error  %v", expressionStr, err)
@@ -1956,8 +1956,8 @@ func filterCEL(message ref.Val, expression ref.Val) ref.Val {
  Then then evaluates the expression in the context of the key/value variables.
  If the expression is true, it inserts the ke/value into the map
 */
-func filterMapEntry(mapVal reflect.Value, key, value reflect.Value, expression string) error {
-	env, err := initializeEmptyCELEnv()
+func (p *Processor) filterMapEntry(mapVal reflect.Value, key, value reflect.Value, expression string) error {
+	env, err := p.initializeEmptyCELEnv()
 	if err != nil {
 		return err
 	}
@@ -1978,7 +1978,7 @@ func filterMapEntry(mapVal reflect.Value, key, value reflect.Value, expression s
 	if err != nil {
 		return err
 	}
-	condition, err := evalCondition(env, expression, variables)
+	condition, err := p.evalCondition(env, expression, variables)
 	if err != nil {
 		return err
 	}
@@ -2001,8 +2001,8 @@ var nilValue = reflect.ValueOf(nil)
  Then then evaluates the expression in the context of the value variables.
  If the expression is true, it inserts the value into the slice
 */
-func filterArraySlice(slice reflect.Value, value reflect.Value, expression string) (reflect.Value, error) {
-	env, err := initializeEmptyCELEnv()
+func (p *Processor) filterArraySlice(slice reflect.Value, value reflect.Value, expression string) (reflect.Value, error) {
+	env, err := p.initializeEmptyCELEnv()
 	if err != nil {
 		return nilValue, err
 	}
@@ -2016,7 +2016,7 @@ func filterArraySlice(slice reflect.Value, value reflect.Value, expression strin
 	if err != nil {
 		return nilValue, err
 	}
-	condition, err := evalCondition(env, expression, variables)
+	condition, err := p.evalCondition(env, expression, variables)
 	if err != nil {
 		return nilValue, err
 	}
@@ -2028,20 +2028,17 @@ func filterArraySlice(slice reflect.Value, value reflect.Value, expression strin
 }
 
 /* Get declaration of additional overloaded CEL functions */
-func getAdditionalCELFuncDecls() cel.EnvOption {
-	return triggerFuncDecls
+func (p *Processor) getAdditionalCELFuncDecls() cel.EnvOption {
+	return p.triggerFuncDecls
 }
 
-/* Get implemenations of additional overloaded CEL functions */
-func getAdditionalCELFuncs() cel.ProgramOption {
-	return triggerFuncs
+/* Get implementations of additional overloaded CEL functions */
+func (p *Processor) getAdditionalCELFuncs() cel.ProgramOption {
+	return p.triggerFuncs
 }
 
-var triggerFuncDecls cel.EnvOption
-var triggerFuncs cel.ProgramOption
-
-func init() {
-	triggerFuncDecls = cel.Declarations(
+func (p *Processor) initCELFuncs() {
+	p.triggerFuncDecls = cel.Declarations(
 		decls.NewFunction("filter",
 			decls.NewOverload("filter_any_string", []*exprpb.Type{decls.Any, decls.String}, decls.Any)),
 		decls.NewFunction("call",
@@ -2063,35 +2060,36 @@ func init() {
 		decls.NewFunction("split",
 			decls.NewOverload("split_string", []*exprpb.Type{decls.String, decls.String}, decls.NewListType(decls.String))))
 
-	triggerFuncs = cel.Functions(
+	p.triggerFuncs = cel.Functions(
 		&functions.Overload{
 			Operator: "filter",
-			Binary:   filterCEL},
+			Binary:   p.filterCEL},
 		&functions.Overload{
 			Operator: "call",
-			Binary:   callCEL},
+			Binary:   p.callCEL},
 		&functions.Overload{
 			Operator: "sendEvent",
-			Function: sendEventCEL},
+			Function: p.sendEventCEL},
 		&functions.Overload{
 			Operator: "applyResources",
-			Binary:   applyResourcesCEL},
+			Binary:   p.applyResourcesCEL},
 		&functions.Overload{
 			Operator: "kabaneroConfig",
-			Function: kabaneroConfigCEL},
+			Function: p.kabaneroConfigCEL},
 		&functions.Overload{
 			Operator: "jobID",
-			Function: jobIDCEL},
+			Function: p.jobIDCEL},
 		&functions.Overload{
 			Operator: "downloadYAML",
-			Binary:   downloadYAMLCEL},
+			Binary:   p.downloadYAMLCEL},
 		&functions.Overload{
 			Operator: "toDomainName",
-			Unary:    toDomainNameCEL},
+			Unary:    p.toDomainNameCEL},
 		&functions.Overload{
 			Operator: "toLabel",
-			Unary:    toLabelCEL},
+			Unary:    p.toLabelCEL},
 		&functions.Overload{
 			Operator: "split",
-			Binary:   splitCEL})
+			Binary:   p.splitCEL},
+	)
 }

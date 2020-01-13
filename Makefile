@@ -9,7 +9,6 @@ push-image:
 	docker push $(IMAGE)
 
 local-build:
-	GO111MODULE=off go build github.com/kabanero-io/kabanero-events/cmd/kabanero-listener/...
 	GO111MODULE=off go build github.com/kabanero-io/kabanero-events/cmd/kabanero-events/...
 
 lint:
@@ -24,4 +23,4 @@ test:
 format:
 	GO111MODULE=off go fmt ./...
 
-all-local: format lint vet test local-build
+local-all: format lint vet test local-build
