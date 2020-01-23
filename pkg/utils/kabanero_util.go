@@ -25,9 +25,11 @@ var (
 
 // GetKabaneroNamespace Get namespace of where kabanero is installed
 func GetKabaneroNamespace() string {
-	kabaneroNamespace = os.Getenv(KUBENAMESPACE)
 	if kabaneroNamespace == "" {
-		kabaneroNamespace = DEFAULTNAMESPACE
+		kabaneroNamespace = os.Getenv(KUBENAMESPACE)
+		if kabaneroNamespace == "" {
+			kabaneroNamespace = DEFAULTNAMESPACE
+		}
 	}
 
 	return kabaneroNamespace

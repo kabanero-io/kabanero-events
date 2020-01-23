@@ -10,10 +10,10 @@ import (
 )
 
 type restProvider struct {
-	messageProviderDefinition *MessageProviderDefinition
+	messageProviderDefinition *ProviderDefinition
 }
 
-func (provider *restProvider) initialize(mpd *MessageProviderDefinition) error {
+func (provider *restProvider) initialize(mpd *ProviderDefinition) error {
 	provider.messageProviderDefinition = mpd
 	return nil
 }
@@ -58,8 +58,7 @@ func (provider *restProvider) Send(node *EventNode, payload []byte, header inter
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
-	// TODO: honor timeout
-	timeout := time.Duration(5 * time.Second) // TODO: make it configurable
+	timeout := time.Duration(provider.messageProviderDefinition.Timeout * time.Second)
 	client := &http.Client{
 		Transport: tr,
 		Timeout:   timeout,
@@ -71,7 +70,7 @@ func (provider *restProvider) Send(node *EventNode, payload []byte, header inter
 	}
 
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("res_provider Send to %v failed with http status %v", provider.messageProviderDefinition.URL, resp.Status)
 	}
 
@@ -84,7 +83,7 @@ func (provider *restProvider) Receive(node *EventNode) ([]byte, error) {
 	return nil, nil
 }
 
-func newRESTProvider(mpd *MessageProviderDefinition) (*restProvider, error) {
+func newRESTProvider(mpd *ProviderDefinition) (*restProvider, error) {
 	provider := new(restProvider)
 	if err := provider.initialize(mpd); err != nil {
 		return nil, err

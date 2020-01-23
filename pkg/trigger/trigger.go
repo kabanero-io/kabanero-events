@@ -210,14 +210,17 @@ type EventTriggerDefinition struct {
 // Processor contains the event trigger definition and the file it was loaded from
 type Processor struct {
 	triggerDef       *EventTriggerDefinition
+	messageService   *messages.Service
 	triggerDir       string // directory where trigger file is stored
 	triggerFuncDecls cel.EnvOption
 	triggerFuncs     cel.ProgramOption
 }
 
 // NewProcessor creates a new trigger processor.
-func NewProcessor() *Processor {
-	return &Processor{}
+func NewProcessor(messageService *messages.Service) *Processor {
+	return &Processor{
+		messageService: messageService,
+	}
 }
 
 // Initialize initializes a Processor with the specified trigger directory
@@ -252,7 +255,7 @@ func (p *Processor) Initialize(dir string) error {
 	return nil
 }
 
-func (p *Processor) messageListener(provider messages.MessageProvider, node *messages.EventNode) {
+func (p *Processor) messageListener(provider messages.Provider, node *messages.EventNode) {
 	klog.Infof("Starting listener event destination %v", node.Name)
 	for {
 		buf, err := provider.Receive(node)
@@ -266,7 +269,7 @@ func (p *Processor) messageListener(provider messages.MessageProvider, node *mes
 		var messageMap map[string]interface{}
 		err = json.Unmarshal(buf, &messageMap)
 		if err != nil {
-			klog.Errorf("Unable to unarmshal message from node %v", node.Name)
+			klog.Errorf("Unable to unmarshal message from node %v", node.Name)
 			continue
 		}
 		_, err = p.ProcessMessage(messageMap, node.Name)
@@ -279,14 +282,14 @@ func (p *Processor) messageListener(provider messages.MessageProvider, node *mes
 }
 
 // StartListeners starts all event source listeners.
-func (p *Processor) StartListeners(providers *messages.EventDefinition) error {
+func (p *Processor) StartListeners() error {
 	triggers := p.triggerDef.EventTriggers
 	for dest := range triggers {
-		destNode := providers.GetEventDestination(dest)
+		destNode := p.messageService.GetNode(dest)
 		if destNode == nil {
 			return fmt.Errorf("unable to find an eventDestination with the name '%s' in trigger definitions. Verify that it has been defined", dest)
 		}
-		provider := providers.GetMessageProvider(destNode.ProviderRef)
+		provider := p.messageService.GetProvider(destNode.ProviderRef)
 		if provider == nil {
 			return fmt.Errorf("unable to find a messageProvider with the name '%s'. Verify that is has been defined", destNode.ProviderRef)
 		}
@@ -1830,36 +1833,24 @@ func (p *Processor) sendEventCEL(refs ...ref.Val) ref.Val {
 		return types.ValOrErr(nil, "sendEventCEL error marshalling message to JSON: %v", err)
 	}
 
-	eventProviders := messages.GetEventProviders()
-	destNode := eventProviders.GetEventDestination(dest)
-	if destNode == nil {
-		klog.Errorf("Unable to find an eventDestination with the name '%s'. Verify that it has been defined.", dest)
-		return types.ValOrErr(nil, "sendEventCEL Unable to find event destinations %v", dest)
-	}
-	provider := eventProviders.GetMessageProvider(destNode.ProviderRef)
-	if provider == nil {
-		klog.Errorf("Unable to find a messageProvider with the name '%s'. Verify that is has been defined.", destNode.ProviderRef)
-		return types.ValOrErr(nil, "sendEventCEL Unable to find message provider %v", destNode.ProviderRef)
-	}
-
 	var header interface{} = nil
 	if numParams == 3 {
 		header, err = convertToHeaderMap(context.Value())
 		if err != nil {
-			return types.ValOrErr(context, "sendEventCEL unabele to convert header to map[string][]string: %v", context)
+			return types.ValOrErr(context, "sendEventCEL unable to convert header to map[string][]string: %v", context)
 		}
 	}
 
 	if p.triggerDef.isDryRun() {
-		klog.Infof("sendEvent: dryrun is set. Event was not sent to destination '%s'", dest)
+		klog.Infof("sendEvent: dry run is set. Event was not sent to destination '%s'", dest)
 		return types.String("")
 	}
 
-	err = provider.Send(destNode, buf, header)
+	err = p.messageService.Send(dest, buf, header)
 	if err != nil {
-		klog.Error(err)
-		return types.ValOrErr(nil, "sendEventCEL error sending message: %v", err)
+		return types.ValOrErr(nil, "sendEventCEL: unable to send event: %v", err)
 	}
+
 	if klog.V(6) {
 		klog.Infof("sendEvent successfully sent message to destination '%s'", dest)
 	}

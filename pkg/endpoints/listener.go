@@ -35,69 +35,59 @@ const (
 )
 
 /* Event listener */
-func listenerHandler(writer http.ResponseWriter, req *http.Request) {
+func listenerHandler(messageService *messages.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, req *http.Request) {
 
-	header := req.Header
-	klog.Infof("Received request. Header: %v", header)
+		header := req.Header
+		klog.Infof("Received request. Header: %v", header)
 
-	var body = req.Body
+		var body = req.Body
 
-	defer body.Close()
-	bytes, err := ioutil.ReadAll(body)
-	if err != nil {
-		klog.Errorf("Webhook listener can not read body. Error: %v", err)
-	} else {
-		klog.Infof("Webhook listener received body: %v", string(bytes))
+		defer body.Close()
+		bytes, err := ioutil.ReadAll(body)
+		if err != nil {
+			klog.Errorf("Webhook listener can not read body. Error: %v", err)
+		} else {
+			klog.Infof("Webhook listener received body: %v", string(bytes))
+		}
+
+		var bodyMap map[string]interface{}
+		err = json.Unmarshal(bytes, &bodyMap)
+		if err != nil {
+			klog.Errorf("Unable to unmarshal json body: %v", err)
+			return
+		}
+
+		message := make(map[string]interface{})
+		message[HEADER] = map[string][]string(header)
+		message[BODY] = bodyMap
+
+		bytes, err = json.Marshal(message)
+		if err != nil {
+			klog.Errorf("Unable to marshall as JSON: %v, type %T", message, message)
+			return
+		}
+
+		err = messageService.Send(WEBHOOKDESTINATION, bytes, nil)
+		if err != nil {
+			klog.Errorf("Unable to send event. Error: %v", err)
+			return
+		}
+
+		writer.WriteHeader(http.StatusAccepted)
 	}
-
-	var bodyMap map[string]interface{}
-	err = json.Unmarshal(bytes, &bodyMap)
-	if err != nil {
-		klog.Errorf("Unable to unmarshal json body: %v", err)
-		return
-	}
-
-	message := make(map[string]interface{})
-	message[HEADER] = map[string][]string(header)
-	message[BODY] = bodyMap
-
-	bytes, err = json.Marshal(message)
-	if err != nil {
-		klog.Errorf("Unable to marshall as JSON: %v, type %T", message, message)
-		return
-	}
-
-	eventProviders := messages.GetEventProviders()
-	destNode := eventProviders.GetEventDestination(WEBHOOKDESTINATION)
-	if destNode == nil {
-		klog.Errorf("Unable to find the %s eventDestination.", WEBHOOKDESTINATION)
-		return
-	}
-	provider := eventProviders.GetMessageProvider(destNode.ProviderRef)
-	if provider == nil {
-		klog.Errorf("Unable to find a messageProvider with the name '%s'. Verify that is has been defined.", destNode.ProviderRef)
-		return
-	}
-
-	err = provider.Send(destNode, bytes, nil)
-	if err != nil {
-		klog.Errorf("Unable to send event. Error: %v", err)
-		return
-	}
-
-	writer.WriteHeader(http.StatusAccepted)
 }
 
 // NewListener creates a new event listener on port 9080
-func NewListener() error {
+func NewListener(messageService *messages.Service) error {
 	klog.Infof("Starting listener on port 9080")
-	http.HandleFunc("/webhook", listenerHandler)
+	http.HandleFunc("/webhook", listenerHandler(messageService))
 	err := http.ListenAndServe(":9080", nil)
 	return err
 }
 
 // NewListenerTLS creates a new TLS event listener on port 9443
-func NewListenerTLS(tlsCertPath, tlsKeyPath string) error {
+func NewListenerTLS(messageService *messages.Service, tlsCertPath, tlsKeyPath string) error {
 	klog.Infof("Starting TLS listener on port 9443")
 	if _, err := os.Stat(tlsCertPath); os.IsNotExist(err) {
 		klog.Fatalf("TLS certificate '%s' not found: %v", tlsCertPath, err)
@@ -109,7 +99,7 @@ func NewListenerTLS(tlsCertPath, tlsKeyPath string) error {
 		return err
 	}
 
-	http.HandleFunc("/webhook", listenerHandler)
+	http.HandleFunc("/webhook", listenerHandler(messageService))
 	err := http.ListenAndServeTLS(":9443", tlsCertPath, tlsKeyPath, nil)
 	return err
 }

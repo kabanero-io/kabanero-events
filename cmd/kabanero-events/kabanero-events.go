@@ -42,16 +42,6 @@ const (
 	tlsKeyPath         = "/etc/tls/tls.key"
 )
 
-var (
-	masterURL        string // URL of Kube master
-	kubeConfig       string // path to kube config file. default <home>/.kube/config
-	triggerProc      *trigger.Processor
-	eventProviders   *messages.EventDefinition
-	providerCfg      string // Path of provider config to use
-	disableTLS       bool   // Option to disable TLS listener
-	skipChkSumVerify bool   // Option to skip verification of SHA256 checksum of trigger collection
-)
-
 func init() {
 	// Print stacks and exit on SIGINT
 	go func() {
@@ -59,13 +49,35 @@ func init() {
 		signal.Notify(sigChan, syscall.SIGINT)
 		buf := make([]byte, 1<<20)
 		<-sigChan
-		stacklen := runtime.Stack(buf, true)
-		klog.Infof("=== received SIGQUIT ===\n*** goroutine dump...\n%s\n*** end\n", buf[:stacklen])
+		stackLen := runtime.Stack(buf, true)
+		klog.Infof("=== received SIGQUIT ===\n*** goroutine dump...\n%s\n*** end\n", buf[:stackLen])
 		os.Exit(1)
 	}()
 }
 
 func main() {
+	// Flags
+	var masterURL string
+	var providerCfg string
+	var kubeConfig string
+	var disableTLS bool
+	var skipChkSumVerify bool
+
+	flag.StringVar(&masterURL, "master", "", "overrides the address of the Kubernetes API server in the kubeconfig file (only required if out-of-cluster)")
+	flag.StringVar(&providerCfg, "providerCfg", "", "path to the provider config")
+	flag.BoolVar(&disableTLS, "disableTLS", false, "set to use non-TLS listener and listen on port 9080")
+	flag.BoolVar(&skipChkSumVerify, "skipChecksumVerify", false, "set to skip the verification of the trigger collection checksum")
+
+	var kubeConfigPath string
+	if home := homedir.HomeDir(); home != "" {
+		kubeConfigPath = filepath.Join(home, ".kube", "config")
+	} else {
+		kubeConfigPath = ""
+	}
+	flag.StringVar(&kubeConfig, "kubeconfig", kubeConfigPath, "absolute path to the kubeconfig file (optional)")
+
+	// init flags for klog
+	klog.InitFlags(nil)
 
 	flag.Parse()
 
@@ -115,12 +127,6 @@ func main() {
 		klog.Fatal(fmt.Errorf("unable to download trigger pointed by kabanero_index_url at: %s, error: %s", kabaneroIndexURL, err))
 	}
 
-	triggerProc = trigger.NewProcessor()
-	err = triggerProc.Initialize(dir)
-	if err != nil {
-		klog.Fatal(fmt.Errorf("unable to initialize trigger definition: %s", err))
-	}
-
 	if providerCfg == "" {
 		providerCfg = filepath.Join(dir, "eventDefinitions.yaml")
 	}
@@ -130,22 +136,28 @@ func main() {
 		klog.Errorf("eventDefinitions.yaml was not found: %s", providerCfg)
 	}
 
-	eventProviders, err = messages.InitializeEventProviders(providerCfg)
+	messageService, err := messages.NewService(providerCfg)
 	if err != nil {
-		klog.Fatal(fmt.Errorf("unable to initialize event providers: %s", err))
+		klog.Fatal(fmt.Errorf("unable to initialize message service: %s", err))
+	}
+
+	triggerProc := trigger.NewProcessor(messageService)
+	err = triggerProc.Initialize(dir)
+	if err != nil {
+		klog.Fatal(fmt.Errorf("unable to initialize trigger definition: %s", err))
 	}
 
 	/* Start listeners to listen on events */
-	err = triggerProc.StartListeners(eventProviders)
+	err = triggerProc.StartListeners()
 	if err != nil {
 		klog.Fatal(fmt.Errorf("unable to start listeners for event triggers: %s", err))
 	}
 
 	// Listen for events
 	if disableTLS {
-		err = endpoints.NewListener()
+		err = endpoints.NewListener(messageService)
 	} else {
-		err = endpoints.NewListenerTLS(tlsCertPath, tlsKeyPath)
+		err = endpoints.NewListenerTLS(messageService, tlsCertPath, tlsKeyPath)
 	}
 
 	if err != nil {
@@ -153,20 +165,4 @@ func main() {
 	}
 
 	select {}
-}
-
-func init() {
-	if home := homedir.HomeDir(); home != "" {
-		flag.StringVar(&kubeConfig, "kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-	} else {
-		flag.StringVar(&kubeConfig, "kubeconfig", "", "absolute path to the kubeconfig file")
-	}
-	flag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
-	flag.StringVar(&providerCfg, "providerCfg", "", "path to the provider config")
-	flag.BoolVar(&disableTLS, "disableTLS", false, "set to use non-TLS listener")
-	flag.BoolVar(&skipChkSumVerify, "skipChecksumVerify", false, "set to skip the verification of trigger collection checksum")
-
-	// init flags for klog
-	klog.InitFlags(nil)
-
 }

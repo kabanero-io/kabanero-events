@@ -4,28 +4,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/kabanero-io/kabanero-events/pkg/messages"
-	"gopkg.in/yaml.v2"
 	"sync"
 	"testing"
 	"time"
 )
 
-const TEST_DATA_DIR = "../../test_data"
+const testDataDir = "../../test_data"
 
 func getEventDefinitions(provider string) string {
-	return fmt.Sprintf("%s/%s/eventDefinitions.yaml", TEST_DATA_DIR, provider)
+	return fmt.Sprintf("%s/%s/eventDefinitions.yaml", testDataDir, provider)
 }
 
 /*
- * TestReadEventProviders tests that event providers can be unmarshaled.
+ * TestReadEventProviders tests that event providers can be unmarshalled.
  */
 func TestReadEventProviders(t *testing.T) {
-	eventProviders, err := messages.InitializeEventProviders(getEventDefinitions("providers0"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = yaml.Marshal(eventProviders)
+	_, err := messages.NewService(getEventDefinitions("providers0"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,24 +32,19 @@ func TestProviderListenAndSend(t *testing.T) {
 	// Comment out following line to run the example
 	t.SkipNow()
 
-	eventProviders, err := messages.InitializeEventProviders(getEventDefinitions("providers0"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	messageService, err := messages.NewService(getEventDefinitions("providers0"))
+	eventDefinition := messageService.GetEventDefinition()
 
-	b, err := yaml.Marshal(eventProviders)
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := string(b)
-	t.Logf("Processed eventDefinitions.yaml:\n%s", payload)
 
 	// Start listening on all eventSources
 	t.Log("Creating subscriptions for event sources")
 
 	/*
-		for _, eventSource := range eventProviders.EventSources {
-			provider := eventProviders.GetMessageProvider(eventSource.ProviderRef)
+		for _, eventSource := range eventDefinition.EventSources {
+			provider := eventDefinition.GetMessageProvider(eventSource.ProviderRef)
 			t.Logf("Subscribing to event source '%s'", eventSource.ProviderRef)
 			echoMessage := func(data []byte) {
 				t.Logf("Message body: %s", data)
@@ -68,7 +57,7 @@ func TestProviderListenAndSend(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	var wg sync.WaitGroup
-	for _, node := range eventProviders.EventDestinations {
+	for _, node := range eventDefinition.EventDestinations {
 		msg, err := json.Marshal(map[string]string{
 			"msg": fmt.Sprintf("Hello %s from %s...", node.Name, node.ProviderRef),
 		})
@@ -76,7 +65,7 @@ func TestProviderListenAndSend(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Logf("Sending message to event destination '%s': %s", node.Name, msg)
-		provider := eventProviders.GetMessageProvider(node.ProviderRef)
+		provider := messageService.GetProvider(node.ProviderRef)
 		if provider == nil {
 			t.Fatalf("unable to find provider referenced by event destination '%s'", node.Name)
 		}
@@ -99,24 +88,19 @@ func TestProviderSendAndReceive(t *testing.T) {
 	// Comment out following line to run the example
 	t.SkipNow()
 
-	eventProviders, err := messages.InitializeEventProviders(getEventDefinitions("providers0"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	messageService, err := messages.NewService(getEventDefinitions("providers0"))
+	eventDefinition := messageService.GetEventDefinition()
 
-	b, err := yaml.Marshal(eventProviders)
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := string(b)
-	t.Logf("Processed eventDefinitions.yaml:\n%s", payload)
 
 	// Start listening on all eventSources
 	t.Log("Creating subscriptions for event sources")
 
 	/*
-		for _, eventSource := range eventProviders.EventSources {
-			provider := eventProviders.GetMessageProvider(eventSource.ProviderRef)
+		for _, eventSource := range eventDefinition.EventSources {
+			provider := eventDefinition.GetMessageProvider(eventSource.ProviderRef)
 			t.Logf("Subscribing to event source '%s'", eventSource.ProviderRef)
 			err := provider.Subscribe(eventSource)
 			if err != nil {
@@ -128,7 +112,7 @@ func TestProviderSendAndReceive(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Send the messages to the eventSources
-	for _, node := range eventProviders.EventDestinations {
+	for _, node := range eventDefinition.EventDestinations {
 		msg, err := json.Marshal(map[string]string{
 			"msg": fmt.Sprintf("Hello %s from %s...", node.Name, node.ProviderRef),
 		})
@@ -136,7 +120,7 @@ func TestProviderSendAndReceive(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Logf("Sending message to event destination '%s': %s", node.Name, msg)
-		provider := eventProviders.GetMessageProvider(node.ProviderRef)
+		provider := messageService.GetProvider(node.ProviderRef)
 		if provider == nil {
 			t.Fatalf("unable to find provider referenced by event destination '%s'", node.Name)
 		}
@@ -154,8 +138,8 @@ func TestProviderSendAndReceive(t *testing.T) {
 	// And receive them here
 	/*
 		numMessagesExpected := 2
-		for _, eventSource := range eventProviders.EventSources {
-			provider := eventProviders.GetMessageProvider(eventSource.ProviderRef)
+		for _, eventSource := range eventDefinition.EventSources {
+			provider := eventDefinition.GetMessageProvider(eventSource.ProviderRef)
 
 			// Try maxAttempts times to receive messages before giving up
 			for i := 0; i < numMessagesExpected; i++ {

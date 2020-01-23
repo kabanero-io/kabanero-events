@@ -252,7 +252,7 @@ func TestApplyTemplateWithCELVariables(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tp := trigger.NewProcessor()
+	tp := trigger.NewProcessor(nil)
 	err = tp.Initialize(TRIGGER1)
 	if err != nil {
 		t.Fatal(err)
@@ -288,7 +288,7 @@ func TestConditionalVariable(t *testing.T) {
 			t.Fatal(err)
 		}
 	*/
-	tp := trigger.NewProcessor()
+	tp := trigger.NewProcessor(nil)
 	err := tp.Initialize(TRIGGER3)
 	if err != nil {
 		t.Fatal(err)
@@ -400,7 +400,7 @@ func TestAdditionalfunctions(t *testing.T) {
 		}
 	*/
 
-	tp := trigger.NewProcessor()
+	tp := trigger.NewProcessor(nil)
 	err := tp.Initialize(TRIGGER4)
 	if err != nil {
 		t.Fatal(err)
@@ -565,7 +565,7 @@ func TestDoubleNestedCELVariables(t *testing.T) {
 		}
 
 	*/
-	tp := trigger.NewProcessor()
+	tp := trigger.NewProcessor(nil)
 	err = tp.Initialize(TRIGGER5)
 	if err != nil {
 		t.Fatal(err)
@@ -595,7 +595,7 @@ func TestSwitch(t *testing.T) {
 		[]byte(`{"attr1": "string1a", "attr2": "string2a"}`),
 	}
 
-	tp := trigger.NewProcessor()
+	tp := trigger.NewProcessor(nil)
 	err := tp.Initialize(TRIGGER6)
 	if err != nil {
 		t.Fatal(err)
@@ -644,7 +644,7 @@ func TestCall(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	triggerProc := trigger.NewProcessor()
+	triggerProc := trigger.NewProcessor(nil)
 	err = triggerProc.Initialize(TRIGGER7)
 	if err != nil {
 		t.Fatal(err)
@@ -688,7 +688,7 @@ func TestRecursiveCall(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	triggerProc := trigger.NewProcessor()
+	triggerProc := trigger.NewProcessor(nil)
 	err = triggerProc.Initialize(TRIGGER8)
 	if err != nil {
 		t.Fatal(err)
@@ -716,7 +716,7 @@ func TestFilter(t *testing.T) {
 		t.Fatalf("Unable to parse srrc: %v", err)
 	}
 
-	triggerProc := trigger.NewProcessor()
+	triggerProc := trigger.NewProcessor(nil)
 	err = triggerProc.Initialize(TRIGGER9)
 	if err != nil {
 		t.Fatal(err)
