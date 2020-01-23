@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/kabanero-io/kabanero-events/pkg/endpoints"
 	"github.com/kabanero-io/kabanero-events/pkg/messages"
 	"github.com/kabanero-io/kabanero-events/pkg/utils"
 	"gopkg.in/yaml.v2"
@@ -210,16 +211,16 @@ type EventTriggerDefinition struct {
 // Processor contains the event trigger definition and the file it was loaded from
 type Processor struct {
 	triggerDef       *EventTriggerDefinition
-	messageService   *messages.Service
+	env              *endpoints.Environment
 	triggerDir       string // directory where trigger file is stored
 	triggerFuncDecls cel.EnvOption
 	triggerFuncs     cel.ProgramOption
 }
 
 // NewProcessor creates a new trigger processor.
-func NewProcessor(messageService *messages.Service) *Processor {
+func NewProcessor(env *endpoints.Environment) *Processor {
 	return &Processor{
-		messageService: messageService,
+		env: env,
 	}
 }
 
@@ -285,11 +286,11 @@ func (p *Processor) messageListener(provider messages.Provider, node *messages.E
 func (p *Processor) StartListeners() error {
 	triggers := p.triggerDef.EventTriggers
 	for dest := range triggers {
-		destNode := p.messageService.GetNode(dest)
+		destNode := p.env.MessageService.GetNode(dest)
 		if destNode == nil {
 			return fmt.Errorf("unable to find an eventDestination with the name '%s' in trigger definitions. Verify that it has been defined", dest)
 		}
-		provider := p.messageService.GetProvider(destNode.ProviderRef)
+		provider := p.env.MessageService.GetProvider(destNode.ProviderRef)
 		if provider == nil {
 			return fmt.Errorf("unable to find a messageProvider with the name '%s'. Verify that is has been defined", destNode.ProviderRef)
 		}
@@ -1200,14 +1201,9 @@ func SubstituteTemplate(templateStr string, variables interface{}) (string, erro
 }
 
 /* Create resource. Assume it does not already exist */
-func createResource(resourceStr string) error {
+func (p *Processor) createResource(resourceStr string) error {
 	if klog.V(4) {
 		klog.Infof("Creating resource %s", resourceStr)
-	}
-
-	dynamicClient := utils.GetDynamicClient()
-	if dynamicClient == nil {
-		return fmt.Errorf("unable to get dynamic client")
 	}
 
 	/* Convert yaml to unstructured*/
@@ -1246,7 +1242,7 @@ func createResource(resourceStr string) error {
 	}
 
 	if err == nil {
-		var intfNoNS = dynamicClient.Resource(gvr)
+		var intfNoNS = p.env.DynamicClient.Resource(gvr)
 		var intf dynamic.ResourceInterface
 		intf = intfNoNS.Namespace(namespace)
 
@@ -1486,7 +1482,7 @@ func (p *Processor) downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val)
 	}
 
 	var ret = make(map[string]interface{})
-	fileContent, exists, err := utils.DownloadYAML(headerMap, bodyMap, fileName)
+	fileContent, exists, err := utils.DownloadYAML(p.env.DynamicClient, headerMap, bodyMap, fileName)
 	ret["exists"] = exists
 	if err != nil {
 		ret["error"] = fmt.Sprintf("%v", err)
@@ -1670,7 +1666,7 @@ func (p *Processor) applyResourcesCEL(dir ref.Val, variables ref.Val) ref.Val {
 		return types.ValOrErr(dir, "unexpected type '%v' passed as first parameter to function applyResources. It should be string", dir.Type())
 	}
 
-	err := applyResourcesHelper(p.triggerDir, dirStr, variables.Value(), p.triggerDef.isDryRun())
+	err := p.applyResourcesHelper(p.triggerDir, dirStr, variables.Value(), p.triggerDef.isDryRun())
 	var ret ref.Val
 	if err != nil {
 		ret = types.String(fmt.Sprintf("applyResources error  applying template %v", err))
@@ -1699,7 +1695,7 @@ func findFiles(resourceDir string, suffixes []string) ([]string, error) {
 	return ret, nil
 }
 
-func applyResourcesHelper(triggerDirectory string, directory string, variables interface{}, dryrun bool) error {
+func (p *Processor) applyResourcesHelper(triggerDirectory string, directory string, variables interface{}, dryrun bool) error {
 
 	resourceDir, err := utils.MergePathWithErrorCheck(triggerDirectory, directory)
 	if err != nil {
@@ -1728,7 +1724,7 @@ func applyResourcesHelper(triggerDirectory string, directory string, variables i
 			if klog.V(5) {
 				klog.Infof("applying resource: %s", resource)
 			}
-			err = createResource(resource)
+			err = p.createResource(resource)
 			if err != nil {
 				return err
 			}
@@ -1846,7 +1842,7 @@ func (p *Processor) sendEventCEL(refs ...ref.Val) ref.Val {
 		return types.String("")
 	}
 
-	err = p.messageService.Send(dest, buf, header)
+	err = p.env.MessageService.Send(dest, buf, header)
 	if err != nil {
 		return types.ValOrErr(nil, "sendEventCEL: unable to send event: %v", err)
 	}

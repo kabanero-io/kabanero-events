@@ -48,11 +48,6 @@ const (
 	maxNameLength  = 253 // max length of a name in Kubernetes
 )
 
-var (
-	kubeClient    *kubernetes.Clientset
-	dynamicClient dynamic.Interface
-)
-
 // NewKubeConfig Creates a new kube config
 func NewKubeConfig(masterURL, kubeconfigPath string) (*rest.Config, error) {
 	var cfg *rest.Config
@@ -75,26 +70,12 @@ func NewKubeConfig(masterURL, kubeconfigPath string) (*rest.Config, error) {
 
 // NewKubeClient Creates a new kube client
 func NewKubeClient(kubeConfig *rest.Config) (*kubernetes.Clientset, error) {
-	var err error
-	kubeClient, err = kubernetes.NewForConfig(kubeConfig)
-	return kubeClient, err
+	return kubernetes.NewForConfig(kubeConfig)
 }
 
 // NewDynamicClient Creates a new dynamic client
 func NewDynamicClient(kubeConfig *rest.Config) (dynamic.Interface, error) {
-	var err error
-	dynamicClient, err = dynamic.NewForConfig(kubeConfig)
-	return dynamicClient, err
-}
-
-// GetKubeClient Gets the kube client
-func GetKubeClient() *kubernetes.Clientset {
-	return kubeClient
-}
-
-// GetDynamicClient Gets the dynamic client
-func GetDynamicClient() dynamic.Interface {
-	return dynamicClient
+	return dynamic.NewForConfig(kubeConfig)
 }
 
 /*

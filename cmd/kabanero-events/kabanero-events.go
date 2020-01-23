@@ -107,7 +107,7 @@ func main() {
 	kabaneroIndexURL := os.Getenv(KABANEROINDEXURL)
 	if kabaneroIndexURL == "" {
 		// not overridden, use the one in the kabanero CRD
-		kabaneroIndexURL, err = utils.GetKabaneroIndexURL(webhookNamespace)
+		kabaneroIndexURL, err = utils.GetKabaneroIndexURL(dynamicClient, webhookNamespace)
 		if err != nil {
 			klog.Fatal(fmt.Errorf("unable to get kabanero index URL from kabanero CRD. Error: %s", err))
 		}
@@ -141,7 +141,14 @@ func main() {
 		klog.Fatal(fmt.Errorf("unable to initialize message service: %s", err))
 	}
 
-	triggerProc := trigger.NewProcessor(messageService)
+	// Create a new environment that holds our clients etc.
+	env := &endpoints.Environment{
+		MessageService: messageService,
+		KubeClient:     kubeClient,
+		DynamicClient:  dynamicClient,
+	}
+
+	triggerProc := trigger.NewProcessor(env)
 	err = triggerProc.Initialize(dir)
 	if err != nil {
 		klog.Fatal(fmt.Errorf("unable to initialize trigger definition: %s", err))

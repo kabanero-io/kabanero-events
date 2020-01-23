@@ -36,15 +36,10 @@ func GetKabaneroNamespace() string {
 }
 
 // GetKabaneroIndexURL Get the URL to kabanero-index.yaml
-func GetKabaneroIndexURL(namespace string) (string, error) {
+func GetKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string, error) {
 	if klog.V(5) {
 		klog.Infof("Entering getKabaneroIndexURL")
 		defer klog.Infof("Leaving getKabaneroIndexURL")
-	}
-
-	dynInterf := GetDynamicClient()
-	if dynInterf == nil {
-		return "", fmt.Errorf("unable to get dynamic client")
 	}
 
 	gvr := schema.GroupVersionResource{
@@ -182,14 +177,9 @@ data:
 
 Return: username, token, secret name, error
 */
-func GetURLAPIToken(namespace string, repoURL string) (string, string, string, error) {
+func GetURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, string, error) {
 	if klog.V(5) {
 		klog.Infof("GetURLAPIToken namespace: %s, repoURL: %s", namespace, repoURL)
-	}
-
-	dynInterf := GetDynamicClient()
-	if dynInterf == nil {
-		return "", "", "", fmt.Errorf("unable to get dynamic client")
 	}
 
 	gvr := schema.GroupVersionResource{
