@@ -28,7 +28,8 @@ COPY  Gopkg.* ./
 RUN dep ensure -v -vendor-only
 
 # Copy source over
-COPY *.go ./
+COPY cmd ./cmd
+COPY pkg ./pkg
 
 # Linter
 RUN go get -u golang.org/x/lint/golint; golint -set_exit_status
