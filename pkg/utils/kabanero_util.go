@@ -54,8 +54,8 @@ func GetKabaneroNamespace() string {
 // GetKabaneroIndexURL Get the URL to kabanero-index.yaml
 func GetKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string, error) {
 	if klog.V(5) {
-		klog.Infof("Entering getKabaneroIndexURL")
-		defer klog.Infof("Leaving getKabaneroIndexURL")
+		klog.Infof("Entering GetKabaneroIndexURL")
+		defer klog.Infof("Leaving GetKabaneroIndexURL")
 	}
 
 	gvr := schema.GroupVersionResource{

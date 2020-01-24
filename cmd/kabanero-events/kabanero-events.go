@@ -24,6 +24,7 @@ import (
 	"github.com/kabanero-io/kabanero-events/pkg/trigger"
 	"github.com/kabanero-io/kabanero-events/pkg/utils"
 	"io/ioutil"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/util/homedir"
 	"k8s.io/klog"
 	"os"
@@ -58,13 +59,13 @@ func init() {
 func main() {
 	// Flags
 	var masterURL string
-	var providerCfg string
+	var triggerDir string
 	var kubeConfig string
 	var disableTLS bool
 	var skipChkSumVerify bool
 
 	flag.StringVar(&masterURL, "master", "", "overrides the address of the Kubernetes API server in the kubeconfig file (only required if out-of-cluster)")
-	flag.StringVar(&providerCfg, "providerCfg", "", "path to the provider config")
+	flag.StringVar(&triggerDir, "triggerDir", "", "set to use a local trigger directory")
 	flag.BoolVar(&disableTLS, "disableTLS", false, "set to use non-TLS listener and listen on port 9080")
 	flag.BoolVar(&skipChkSumVerify, "skipChecksumVerify", false, "set to skip the verification of the trigger collection checksum")
 
@@ -101,35 +102,16 @@ func main() {
 
 	klog.Infof("Received kubeClient %T, dynamicClient  %T\n", kubeClient, dynamicClient)
 
-	/* Get namespace of where kabanero is installed */
-	webhookNamespace := utils.GetKabaneroNamespace()
-
-	kabaneroIndexURL := os.Getenv(KABANEROINDEXURL)
-	if kabaneroIndexURL == "" {
-		// not overridden, use the one in the kabanero CRD
-		kabaneroIndexURL, err = utils.GetKabaneroIndexURL(dynamicClient, webhookNamespace)
+	/* Download the trigger collection if a local directory was not specified. */
+	if triggerDir == "" {
+		triggerDir, err = getTriggerFiles(dynamicClient, skipChkSumVerify)
 		if err != nil {
-			klog.Fatal(fmt.Errorf("unable to get kabanero index URL from kabanero CRD. Error: %s", err))
+			klog.Fatal(err)
 		}
-	} else {
-		klog.Infof("Using value of KABANERO_INDEX_URL environment variable to fetch kabanero index from: %s", kabaneroIndexURL)
+		defer os.RemoveAll(triggerDir)
 	}
 
-	/* Download the trigger into temp directory */
-	dir, err := ioutil.TempDir("", "webhook")
-	if err != nil {
-		klog.Fatal(fmt.Errorf("unable to create temproary directory. Error: %s", err))
-	}
-	defer os.RemoveAll(dir)
-
-	err = utils.DownloadTrigger(kabaneroIndexURL, dir, !skipChkSumVerify)
-	if err != nil {
-		klog.Fatal(fmt.Errorf("unable to download trigger pointed by kabanero_index_url at: %s, error: %s", kabaneroIndexURL, err))
-	}
-
-	if providerCfg == "" {
-		providerCfg = filepath.Join(dir, "eventDefinitions.yaml")
-	}
+	providerCfg := filepath.Join(triggerDir, "eventDefinitions.yaml")
 
 	if _, err := os.Stat(providerCfg); os.IsNotExist(err) {
 		// Tolerate this for now.
@@ -149,7 +131,7 @@ func main() {
 	}
 
 	triggerProc := trigger.NewProcessor(env)
-	err = triggerProc.Initialize(dir)
+	err = triggerProc.Initialize(triggerDir)
 	if err != nil {
 		klog.Fatal(fmt.Errorf("unable to initialize trigger definition: %s", err))
 	}
@@ -172,4 +154,32 @@ func main() {
 	}
 
 	select {}
+}
+
+func getTriggerFiles(dynamicClient dynamic.Interface, skipChkSumVerify bool) (string, error) {
+	/* Get namespace of where kabanero is installed and the kabanero index URL */
+	webhookNamespace := utils.GetKabaneroNamespace()
+	kabaneroIndexURL := os.Getenv(KABANEROINDEXURL)
+	var err error
+
+	if kabaneroIndexURL == "" {
+		// not overridden, use the one in the kabanero CRD
+		kabaneroIndexURL, err = utils.GetKabaneroIndexURL(dynamicClient, webhookNamespace)
+		if err != nil {
+			return "", fmt.Errorf("unable to get kabanero index URL from kabanero CRD. Error: %s", err)
+		}
+	} else {
+		klog.Infof("Using value of KABANERO_INDEX_URL environment variable to fetch kabanero index from: %s", kabaneroIndexURL)
+	}
+	/* Download the trigger into temp directory */
+	triggerDir, err := ioutil.TempDir("", "webhook")
+	if err != nil {
+		return "", fmt.Errorf("unable to create temproary directory. Error: %s", err)
+	}
+
+	err = utils.DownloadTrigger(kabaneroIndexURL, triggerDir, !skipChkSumVerify)
+	if err != nil {
+		return "", fmt.Errorf("unable to download trigger pointed by kabanero_index_url at: %s, error: %s", kabaneroIndexURL, err)
+	}
+	return triggerDir, err
 }
