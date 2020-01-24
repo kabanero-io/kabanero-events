@@ -46,35 +46,28 @@ func NewService(fileName string) (*Service, error) {
 
 	// Create the messaging providers
 	for _, provider := range ed.Providers {
+		if klog.V(6) {
+			klog.Infof("Creating %s provider '%s'", provider.ProviderType, provider.Name)
+		}
+
+		var newProvider Provider
 		switch provider.ProviderType {
 		case "nats":
-			if klog.V(6) {
-				klog.Infof("Creating NATS provider '%s'", provider.Name)
-			}
-			natsProvider, err := newNATSProvider(provider)
-			if err != nil {
-				klog.Warning(err)
-			}
-			err = s.Register(provider.Name, natsProvider)
-			if err != nil {
-				klog.Warning(err)
-			}
+			newProvider, err = newNATSProvider(provider)
 		case "rest":
-			if klog.V(6) {
-				klog.Infof("Creating REST provider '%s'", provider.Name)
-			}
-			restProvider, err := newRESTProvider(provider)
-			if err != nil {
-				klog.Warning(err)
-			}
-			err = s.Register(provider.Name, restProvider)
-			if err != nil {
-				klog.Warning(err)
-			}
-		case "kafka":
-			klog.Warning("Kafka provider is not yet implemented.")
+			newProvider, err = newRESTProvider(provider)
 		default:
-			klog.Warningf("Provider '%s' is not recognized.", provider.ProviderType)
+			return nil, fmt.Errorf("provider '%s' for '%s' is not recognized", provider.ProviderType, provider.Name)
+		}
+
+		/* Error from trying to create new provider */
+		if err != nil {
+			return nil, fmt.Errorf("unable to create %s provider '%s': %v", provider.ProviderType, provider.Name, err)
+		}
+
+		err = s.Register(provider.Name, newProvider)
+		if err != nil {
+			return nil, fmt.Errorf("unable to register %s provider '%s': %v", provider.ProviderType, provider.Name, err)
 		}
 	}
 

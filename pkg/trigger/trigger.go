@@ -227,7 +227,7 @@ func NewProcessor(env *endpoints.Environment) *Processor {
 // Initialize initializes a Processor with the specified trigger directory
 func (p *Processor) Initialize(dir string) error {
 	if klog.V(6) {
-		klog.Infof("Processor.initialize %v", dir)
+		klog.Infof("Processor.Initialize %v", dir)
 		defer klog.Infof("Leaving Processor.initialize %v", dir)
 	}
 	var err error
