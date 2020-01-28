@@ -13,5 +13,5 @@ spec:
   - name: docker-image
     resourceRef:
       name: docker-{{.nameSuffix}}
-  serviceAccount: {{.serviceAccount}}
+  serviceAccountName: {{.serviceAccountName}}
   timeout: {{.timeout}}

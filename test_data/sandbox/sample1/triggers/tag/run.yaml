@@ -4,7 +4,7 @@ metadata:
   name: {{.build.nameSuffix}}
   namespace: {{.build.namespace}}
 spec:
-  serviceAccount: {{.build.serviceAccount}}
+  serviceAccountName: {{.build.serviceAccountName}}
   timeout: 
   pipelineRef:
     name: {{.build.collectionID}}-build-tag-push-pipeline

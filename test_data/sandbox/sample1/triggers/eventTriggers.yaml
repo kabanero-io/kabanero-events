@@ -17,7 +17,7 @@ variables:
     value: ' "image-registry.openshift-image-registry.svc:5000" '
   - name: build.namespace
     value: ' kabanero.namespace ' 
-  - name: build.serviceAccount
+  - name: build.serviceAccountName
     value: ' "kabanero-operator" '
   - name: build.timeout
     value: ' "1h0m0s" '

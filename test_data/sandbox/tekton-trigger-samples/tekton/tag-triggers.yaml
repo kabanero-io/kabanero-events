@@ -48,7 +48,7 @@ spec:
       name: $(params.pipeline)-run-$(uid)
       namespace: $(params.namespace)
     spec:
-      serviceAccount: kabanero-operator
+      serviceAccountName: kabanero-operator
       pipelineRef:
         name: $(params.pipeline)
       resources:

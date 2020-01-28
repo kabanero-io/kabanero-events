@@ -20,7 +20,7 @@ eventTriggers:
       - build.jobid : ' jobID() '
       - build.nameSuffix: toDomainName( build.ownerLogin + "-" + build.repositoryName + "-" + build.event + "-" + build.jobid)
       - build.defaultRegistry : ' "image-registry.openshift-image-registry.svc:5000" '
-      - build.serviceAccount : ' "kabanero-operator" '
+      - build.serviceAccountName : ' "kabanero-operator" '
 
       # Pipeline definitions. Is there a better way to do this?
       - build.pr.pipeline: ' build.collectionID + "-build-pipeline" '
