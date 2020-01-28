@@ -17,12 +17,15 @@ limitations under the License.
 package utils
 
 import (
-	"encoding/base64"
 	"fmt"
+	"github.com/kabanero-io/kabanero-operator/pkg/apis/kabanero/v1alpha2"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	"os"
 	"strings"
@@ -171,152 +174,87 @@ func GetKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string,
 	return "", fmt.Errorf("unable to find collection url in kabanero custom resource for namespace %s", namespace)
 }
 
+// GetKabaneroIndexURL Get the URL to kabanero-index.yaml
+func GetKabaneroIndexURLNew(client rest.Interface, namespace string) (string, error) {
+	kabaneroList := v1alpha2.KabaneroList{}
+	err := client.Get().Resource(KABANEROS).Namespace(namespace).Do().Into(&kabaneroList)
+	if err != nil {
+		return "", err
+	}
+
+	for _, kabanero := range kabaneroList.Items {
+		for _, triggerSpec := range kabanero.Spec.Triggers {
+			klog.Infof("trigger id, sha256, url -> %s, %s, %s", triggerSpec.Id, triggerSpec.Sha256, triggerSpec.Url)
+		}
+	}
+
+	return "https://localhost", nil
+}
+
 /*
-GetURLAPIToken Find the user/token for a GitHub API key. The format of the secret:
+GetGitHubSecret Find the user/token for a GitHub API key. The format of the secret:
 apiVersion: v1
 kind: Secret
 metadata:
-  name:  kabanero-org-test-secret
-  namespace: kabanero
+  name: gh-https-secret
   annotations:
-   url: https://github.ibm.com/kabanero-org-test
-type: Opaque
+    tekton.dev/git-0: https://github.com
+type: kubernetes.io/basic-auth
 stringData:
-  url: <url to org or repo>
-data:
-  username:  <base64 encoded user name>
-  token: <base64 encoded token>
+  username: <username>
+  password: <token>
 
- If the url in the secret is a prefix of repoURL, and username and token are defined, then return the user and token.
- Return user, token, error.
- TODO: Change to controller pattern and cache the secrets.
+This will scan for a secret with either of the following annotations:
+ * tekton.dev/git-*
+ * kabanero.io/git-*
 
-Return: username, token, secret name, error
+GetGitHubSecret will return the username and token of a secret whose annotation's value is a prefix match for repoURL.
+Note that a secret with the `kabanero.io/git-*` annotation is preferred over one with `tekton.dev/git-*`.
+Return: username, token, error
 */
-func GetURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, string, error) {
-	if klog.V(5) {
-		klog.Infof("GetURLAPIToken namespace: %s, repoURL: %s", namespace, repoURL)
+func GetGitHubSecret(client *kubernetes.Clientset, namespace string, repoURL string) (string, string, error) {
+	// TODO: Change to controller pattern and cache the secrets.
+	if klog.V(8) {
+		klog.Infof("GetGitHubSecret namespace: %s, repoURL: %s", namespace, repoURL)
 	}
 
-	gvr := schema.GroupVersionResource{
-		Group:    "",
-		Version:  V1,
-		Resource: SECRETS,
-	}
-
-	var intfNoNS = dynInterf.Resource(gvr)
-	var intf dynamic.ResourceInterface
-	intf = intfNoNS.Namespace(namespace)
-
-	// fetch the current resource
-	var unstructuredList *unstructured.UnstructuredList
-	var err error
-	unstructuredList, err = intf.List(metav1.ListOptions{})
+	secrets, err := client.CoreV1().Secrets(namespace).List(metav1.ListOptions{})
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 
-	for _, unstructuredObj := range unstructuredList.Items {
-		var objMap = unstructuredObj.Object
+	secret := getGitHubSecretForRepo(secrets, repoURL)
+	if secret == nil {
+		return "", "", fmt.Errorf("unable to find GitHub token for url: %s", repoURL)
+	}
 
-		metadataObj, ok := objMap[METADATA]
-		if !ok {
-			continue
-		}
+	username, ok := secret.Data["username"]
+	if !ok {
+		return "", "", fmt.Errorf("unable to find username field of secret: %s", secret.Name)
+	}
 
-		metadata, ok := metadataObj.(map[string]interface{})
-		if !ok {
-			continue
-		}
+	token, ok := secret.Data["password"]
+	if !ok {
+		return "", "", fmt.Errorf("unable to find password field of secret: %s", secret.Namespace)
+	}
 
-		annotationsObj, ok := metadata[ANNOTATIONS]
-		if !ok {
-			continue
-		}
+	return string(username), string(token), nil
+}
 
-		annotations, ok := annotationsObj.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		tektonList := make([]string, 0)
-		kabaneroList := make([]string, 0)
-		for key, val := range annotations {
-			if strings.HasPrefix(key, "kabanero.io/git-") {
-				url, ok := val.(string)
-				if ok {
-					kabaneroList = append(kabaneroList, url)
-				}
-			} else if strings.HasPrefix(key, "tekton.dev/git-") {
-				url, ok := val.(string)
-				if ok {
-					tektonList = append(tektonList, url)
-				}
+func getGitHubSecretForRepo(secrets *v1.SecretList, repoURL string) *v1.Secret {
+	var tknSecret *v1.Secret
+	for i, secret := range secrets.Items {
+		for key, val := range secret.Annotations {
+			if strings.HasPrefix(key, "tekton.dev/git-") && strings.HasPrefix(repoURL, val) {
+				tknSecret = &secrets.Items[i]
+			} else if strings.HasPrefix(key, "kabanero.io/git-") && strings.HasPrefix(repoURL, val) {
+				// Since we prefer the kabanero.io annotation, we can terminate early if we find one that matches.
+				return &secrets.Items[i]
 			}
 		}
-
-		/* find that annotation that is a match */
-		urlMatched, matchedURL := matchPrefix(repoURL, kabaneroList)
-		if !urlMatched {
-			urlMatched, matchedURL = matchPrefix(repoURL, tektonList)
-		}
-		if !urlMatched {
-			/* no match */
-			continue
-		}
-		if klog.V(5) {
-			klog.Infof("getURLAPIToken found match %v", matchedURL)
-		}
-
-		nameObj, ok := metadata["name"]
-		if !ok {
-			continue
-		}
-		name, ok := nameObj.(string)
-		if !ok {
-			continue
-		}
-
-		dataMapObj, ok := objMap[DATA]
-		if !ok {
-			continue
-		}
-
-		dataMap, ok := dataMapObj.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		usernameObj, ok := dataMap[USERNAME]
-		if !ok {
-			continue
-		}
-		username, ok := usernameObj.(string)
-		if !ok {
-			continue
-		}
-
-		tokenObj, ok := dataMap[PASSWORD]
-		if !ok {
-			continue
-		}
-		token, ok := tokenObj.(string)
-		if !ok {
-			continue
-		}
-
-		decodedUserName, err := base64.StdEncoding.DecodeString(username)
-		if err != nil {
-			return "", "", "", err
-		}
-
-		decodedToken, err := base64.StdEncoding.DecodeString(token)
-		if err != nil {
-			return "", "", "", err
-		}
-		return string(decodedUserName), string(decodedToken), name, nil
 	}
-	return "", "", "", fmt.Errorf("unable to find API token for url: %s", repoURL)
+
+	return tknSecret
 }
 
 /*

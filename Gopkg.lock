@@ -2,6 +2,22 @@
 
 
 [[projects]]
+  digest = "1:a2682518d905d662d984ef9959984ef87cecb777d379bfa9d9fe40e78069b3e4"
+  name = "github.com/PuerkitoBio/purell"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "44968752391892e1b0d0b821ee79e9a85fa13049"
+  version = "v1.1.1"
+
+[[projects]]
+  branch = "master"
+  digest = "1:c739832d67eb1e9cc478a19cc1a1ccd78df0397bf8a32978b759152e205f644b"
+  name = "github.com/PuerkitoBio/urlesc"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "de5bf2ad457846296e2031421a34e2568e304e35"
+
+[[projects]]
   digest = "1:d04889482897652dedae6d8575b479c06fa3eb3c3abe248163b25d3df5fab43e"
   name = "github.com/antlr/antlr4"
   packages = ["runtime/Go/antlr"]
@@ -15,6 +31,49 @@
   packages = ["spew"]
   pruneopts = "UT"
   revision = "782f4967f2dc4564575ca782fe2d04090b5faca8"
+
+[[projects]]
+  digest = "1:e15b0065da1011473634ffa0dda17731ea1d5f6fb8bb87905216d95fa29eaec0"
+  name = "github.com/emicklei/go-restful"
+  packages = [
+    ".",
+    "log",
+  ]
+  pruneopts = "UT"
+  revision = "99f05a26a0a1c71e664ebe6a76d29b2c80333056"
+  version = "v2.11.1"
+
+[[projects]]
+  digest = "1:ed15647db08b6d63666bf9755d337725960c302bbfa5e23754b4b915a4797e42"
+  name = "github.com/go-openapi/jsonpointer"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "ed123515f087412cd7ef02e49b0b0a5e6a79a360"
+  version = "v0.19.3"
+
+[[projects]]
+  digest = "1:451fe53c19443c6941be5d4295edc973a3eb16baccb940efee94284024be03b0"
+  name = "github.com/go-openapi/jsonreference"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "82f31475a8f7a12bc26962f6e26ceade8ea6f66a"
+  version = "v0.19.3"
+
+[[projects]]
+  digest = "1:a60f47e736cc96075451c3c3502274d86ec6d96588c03d1ab56142ccbb8a5364"
+  name = "github.com/go-openapi/spec"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "772572fd19ebcc983369e53bfaed4bde2077fe0c"
+  version = "v0.19.5"
+
+[[projects]]
+  digest = "1:46055af5313a0deb06c423d849283aac853f554df5a3c42e705a81b8ebf7f1c4"
+  name = "github.com/go-openapi/swag"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "6a1eb9830f1c6b090dcd01cee6c3983604a2306f"
+  version = "v0.19.7"
 
 [[projects]]
   digest = "1:b7a8552c62868d867795b63eaf4f45d3e92d36db82b428e680b9c95a8c33e5b1"
@@ -123,6 +182,26 @@
   pruneopts = "UT"
   revision = "ab8a2e0c74be9d3be70b3184d9acc634935ded82"
   version = "1.1.4"
+
+[[projects]]
+  branch = "master"
+  digest = "1:69650c4dadb080e3ee8647744f4902eb8532849b3eef46f0b8306fc9f4a44038"
+  name = "github.com/kabanero-io/kabanero-operator"
+  packages = ["pkg/apis/kabanero/v1alpha2"]
+  pruneopts = "UT"
+  revision = "f0647dcf13c4f3fa8f71b8725581e0caadd82ca7"
+
+[[projects]]
+  digest = "1:927762c6729b4e72957ba3310e485ed09cf8451c5a637a52fd016a9fe09e7936"
+  name = "github.com/mailru/easyjson"
+  packages = [
+    "buffer",
+    "jlexer",
+    "jwriter",
+  ]
+  pruneopts = "UT"
+  revision = "1b2b06f5f209fea48ff5922d8bfb2b9ed5d8f00b"
+  version = "v0.7.0"
 
 [[projects]]
   digest = "1:33422d238f147d247752996a26574ac48dcf472976eda7f5134015f06bf16563"
@@ -341,17 +420,6 @@
   version = "v1.24.0"
 
 [[projects]]
-  digest = "1:39f43a9ea4af920abf322d1770c5fbf337286cb174a25827b22e1da72dcfdb5c"
-  name = "gopkg.in/go-playground/webhooks.v3"
-  packages = [
-    ".",
-    "github",
-  ]
-  pruneopts = "UT"
-  revision = "8ffb2ffc32b7af2c7e940944eccba4dcd66c692a"
-  version = "v3.13.0"
-
-[[projects]]
   digest = "1:ef72505cf098abdd34efeea032103377bec06abb61d8a06f002d5d296a4b1185"
   name = "gopkg.in/inf.v0"
   packages = ["."]
@@ -531,11 +599,27 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:a25f899659892020bfbc94c5f9395a708fdbb7f9beeede9c286f4cd377bc5753"
+  name = "k8s.io/kube-openapi"
+  packages = ["pkg/common"]
+  pruneopts = "UT"
+  revision = "bf4fb3bd569c8c84504d856598edbc66c10d8744"
+
+[[projects]]
+  branch = "master"
   digest = "1:8b40227d4bf8b431fdab4f9026e6e346f00ac3be5662af367a183f78c57660b3"
   name = "k8s.io/utils"
   packages = ["integer"]
   pruneopts = "UT"
   revision = "c2654d5206da6b7b6ace12841e8f359bb89b443c"
+
+[[projects]]
+  digest = "1:c4e8f6509ee8cec911985a812ed3f9cc024404acc45ac613fa103f735cf3222a"
+  name = "sigs.k8s.io/controller-runtime"
+  packages = ["pkg/scheme"]
+  pruneopts = "UT"
+  revision = "198197fe0fd7553cadd8afcd3338f8ee4b8a7e3f"
+  version = "v0.4.0"
 
 [[projects]]
   digest = "1:7719608fe0b52a4ece56c2dde37bedd95b938677d1ab0f84b8a7852e4c59f849"
@@ -555,9 +639,9 @@
     "github.com/google/cel-go/common/types/ref",
     "github.com/google/cel-go/interpreter/functions",
     "github.com/google/go-github/github",
+    "github.com/kabanero-io/kabanero-operator/pkg/apis/kabanero/v1alpha2",
     "github.com/nats-io/nats.go",
     "google.golang.org/genproto/googleapis/api/expr/v1alpha1",
-    "gopkg.in/go-playground/webhooks.v3/github",
     "gopkg.in/yaml.v2",
     "k8s.io/api/core/v1",
     "k8s.io/apimachinery/pkg/apis/meta/v1",
@@ -565,7 +649,6 @@
     "k8s.io/apimachinery/pkg/runtime/schema",
     "k8s.io/apimachinery/pkg/util/yaml",
     "k8s.io/apimachinery/pkg/watch",
-    "k8s.io/client-go/discovery",
     "k8s.io/client-go/dynamic",
     "k8s.io/client-go/kubernetes",
     "k8s.io/client-go/rest",
