@@ -23,9 +23,9 @@ eventTriggers:
       - build.serviceAccountName : ' "kabanero-operator" '
 
       # Pipeline definitions. Is there a better way to do this?
-      - build.pr.pipeline: ' build.collectionID + "-build-pipeline" '
-      - build.push.pipeline: ' build.collectionID + "-build-push-pipeline" '
-      - build.tag.pipeline: ' build.collectionID + "-image-retag-push-pipeline" '
+      - build.pr.pipeline: ' build.collectionID + "-build-pl" '
+      - build.push.pipeline: ' build.collectionID + "-build-push-pl" '
+      - build.tag.pipeline: ' build.collectionID + "-image-retag-push-pl" '
 
       # Append Kabanero information to the event payload
       - message.body.kabanero.collection: ' build.collectionID '
