@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"fmt"
 	"github.com/kabanero-io/kabanero-operator/pkg/apis/kabanero/v1alpha2"
 	"k8s.io/api/core/v1"
@@ -25,9 +26,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	"os"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
 )
 
@@ -174,10 +175,10 @@ func GetKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string,
 	return "", fmt.Errorf("unable to find collection url in kabanero custom resource for namespace %s", namespace)
 }
 
-// GetKabaneroIndexURL Get the URL to kabanero-index.yaml
-func GetKabaneroIndexURLNew(client rest.Interface, namespace string) (string, error) {
+// GetKabaneroIndexURLNew Get the URL to kabanero-index.yaml
+func GetKabaneroIndexURLNew(kc client.Client, namespace string) (string, error) {
 	kabaneroList := v1alpha2.KabaneroList{}
-	err := client.Get().Resource(KABANEROS).Namespace(namespace).Do().Into(&kabaneroList)
+	err := kc.List(context.Background(), &kabaneroList, client.InNamespace(namespace))
 	if err != nil {
 		return "", err
 	}
