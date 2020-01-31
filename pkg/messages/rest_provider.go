@@ -1,19 +1,35 @@
-package main
+/*
+Copyright 2020 IBM Corporation
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package messages
 
 import (
 	"bytes"
+	"crypto/tls"
+	"fmt"
 	"k8s.io/klog"
 	"net/http"
-	"fmt"
 	"time"
-	"crypto/tls"
 )
 
 type restProvider struct {
-	messageProviderDefinition *MessageProviderDefinition
+	messageProviderDefinition *ProviderDefinition
 }
 
-func (provider *restProvider) initialize(mpd *MessageProviderDefinition) error {
+func (provider *restProvider) initialize(mpd *ProviderDefinition) error {
 	provider.messageProviderDefinition = mpd
 	return nil
 }
@@ -34,9 +50,9 @@ func (provider *restProvider) Send(node *EventNode, payload []byte, header inter
 	if klog.V(6) {
 		klog.Infof("restProvider: Sending %s", string(payload))
 	}
-	
+
 	req, err := http.NewRequest("POST", provider.messageProviderDefinition.URL, bytes.NewBuffer(payload))
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
@@ -53,16 +69,15 @@ func (provider *restProvider) Send(node *EventNode, payload []byte, header inter
 	}
 	req.Header.Add("Content-Type", "application/json")
 
-	tr := &http.Transport{ }
+	tr := &http.Transport{}
 	if provider.messageProviderDefinition.SkipTLSVerify {
-		tr.TLSClientConfig =  &tls.Config{InsecureSkipVerify: true}
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
-	// TODO: honor timeout
-	timeout := time.Duration(5*time.Second) // TODO: make it configurable
-	client := &http.Client {
+	timeout := time.Duration(provider.messageProviderDefinition.Timeout * time.Second)
+	client := &http.Client{
 		Transport: tr,
-		Timeout: timeout,
+		Timeout:   timeout,
 	}
 
 	resp, err := client.Do(req)
@@ -71,7 +86,7 @@ func (provider *restProvider) Send(node *EventNode, payload []byte, header inter
 	}
 
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("res_provider Send to %v failed with http status %v", provider.messageProviderDefinition.URL, resp.Status)
 	}
 
@@ -84,7 +99,7 @@ func (provider *restProvider) Receive(node *EventNode) ([]byte, error) {
 	return nil, nil
 }
 
-func newRESTProvider(mpd *MessageProviderDefinition) (*restProvider, error) {
+func newRESTProvider(mpd *ProviderDefinition) (*restProvider, error) {
 	provider := new(restProvider)
 	if err := provider.initialize(mpd); err != nil {
 		return nil, err

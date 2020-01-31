@@ -3,8 +3,6 @@ language: go
 services:
   - docker
 
-# TODO: Add Travis DOCKER_PASSWORD encrypted secret.
-
 branches:
   only:
   - master

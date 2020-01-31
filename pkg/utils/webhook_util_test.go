@@ -1,7 +1,24 @@
-package main
+/*
+Copyright 2020 IBM Corporation
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package utils_test
 
 import (
 	"fmt"
+	"github.com/kabanero-io/kabanero-events/pkg/utils"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -12,12 +29,12 @@ import (
 const (
 	KABANEROINDEXURLTEST = "https://github.com/kabanero-io/collections/releases/download/v0.1.2/kabanero-index.yaml"
 
-	GZIPTAR0 = "test_data/gZipTarDir0.tar.gz"
+	GZIPTAR0 = "../../test_data/gZipTarDir0.tar.gz"
 )
 
 func TestReadUrl(t *testing.T) {
 	url := KABANEROINDEXURLTEST
-	bytes, err := readHTTPURL(url)
+	bytes, err := utils.ReadHTTPURL(url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,11 +177,11 @@ stacks:
 `
 
 func TestGetTriggerURL(t *testing.T) {
-	collectionMap, err := yamlToMap([]byte(kabaneroIndex))
+	collectionMap, err := utils.YAMLToMap([]byte(kabaneroIndex))
 	if err != nil {
 		t.Fatal(err)
 	}
-	url, chksum, err := getTriggerURL(collectionMap)
+	url, chksum, err := utils.GetTriggerURL(collectionMap, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,16 +216,16 @@ var mergedPathTestData = []mergePathData{
 func TestMergePathWithErrorCheck(t *testing.T) {
 
 	for _, testData := range mergedPathTestData {
-		mergedPath, err := mergePathWithErrorCheck(testData.dir, testData.toMerge)
+		mergedPath, err := utils.MergePathWithErrorCheck(testData.dir, testData.toMerge)
 		succeeded := err == nil
 		if testData.succeed != succeeded {
-			t.Fatal(fmt.Errorf("Unexpected error when merging %s with %s, error: %s, mergedPath: %s", testData.dir, testData.toMerge, err, mergedPath))
+			t.Fatal(fmt.Errorf("unexpected error when merging %s with %s, error: %s, mergedPath: %s", testData.dir, testData.toMerge, err, mergedPath))
 		}
 	}
 
 }
 
-var gZipTar0Files []string = []string{
+var gZipTar0Files = []string{
 	"eventTriggers.yaml",
 	"subdir0/file0",
 	"subdir0/file1",
@@ -225,7 +242,7 @@ func TestGUnzipUnTar(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	file, err := os.Open(GZIPTAR0)
-	err = gUnzipUnTar(file, dir)
+	err = utils.DecompressGzipTar(file, dir)
 	if err != nil {
 		t.Fatal(err)
 	}

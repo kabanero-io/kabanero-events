@@ -1,4 +1,4 @@
-# Copyright 2019 IBM Corporation
+# Copyright 2020 IBM Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,8 @@ COPY  Gopkg.* ./
 RUN dep ensure -v -vendor-only
 
 # Copy source over
-COPY *.go ./
+COPY cmd ./cmd
+COPY pkg ./pkg
 
 # Linter
 RUN go get -u golang.org/x/lint/golint; golint -set_exit_status
@@ -38,7 +39,7 @@ RUN go get -u golang.org/x/lint/golint; golint -set_exit_status
 # RUN go test -v
 
 # Build executable
-RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"'
+RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' github.com/kabanero-io/kabanero-events/cmd/kabanero-events/...
 
 # Stage 2: Build official image based on UBI
 FROM registry.access.redhat.com/ubi7-minimal:7.6-123
@@ -68,5 +69,5 @@ WORKDIR /app
 EXPOSE 9443
 
 # run with log level 2
-# Note liveness/readiness probe depends on './events'
+# Note liveness/readiness probe depends on './kabanero-events'
 CMD ./kabanero-events -v 5

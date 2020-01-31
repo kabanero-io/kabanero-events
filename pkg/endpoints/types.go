@@ -1,5 +1,5 @@
 /*
-Copyright 2019 IBM Corporation
+Copyright 2020 IBM Corporation
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,13 +13,18 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-package main
+
+package endpoints
 
 import (
-	//    "fmt"
-	"testing"
+	"github.com/kabanero-io/kabanero-events/pkg/messages"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 )
 
-/* Empty test just so we can get unit test into the build*/
-func TestEmpty(*testing.T) {
+// Environment stores clients and such that will need to be shared.
+type Environment struct {
+	MessageService *messages.Service
+	KubeClient     *kubernetes.Clientset
+	DynamicClient  dynamic.Interface
 }

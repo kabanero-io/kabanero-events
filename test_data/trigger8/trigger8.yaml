@@ -14,4 +14,4 @@ functions:
           - if : 'input <= 0'
             output : input
           - default:
-            - output: ' input + call("sum", input- 1)'
+            - output: ' input + call("sum", input - 1)'

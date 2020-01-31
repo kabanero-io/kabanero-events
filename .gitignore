@@ -2,8 +2,9 @@
 **/.vscode
 # vendor directory
 vendor/
+
 # executable
-kabanero-events
+/kabanero-events
 
 ### Intellij ###
 .idea
