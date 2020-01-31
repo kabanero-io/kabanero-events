@@ -4,12 +4,12 @@ metadata:
   name: {{.nameSuffix}}
   namespace: {{.namespace}}
 spec:
-  serviceAccount: {{.serviceAccount}}
+  serviceAccountName: {{.serviceAccountName}}
   timeout: 
   pipelineRef:
-    name: {{.collectionID}}-build-tag-push-pipeline
+    name: {{.collectionID}}-image-retag-pl
   resources:
-    - name: docker-image
+    - name: docker-src-image
       resourceRef:
         name: docker-from-{{.nameSuffix}}
     - name: docker-dest-image

@@ -10,5 +10,5 @@ spec:
   - name: git-source
     resourceRef:
       name: git-{{.nameSuffix}}
-  serviceAccount: {{.serviceAccount}}
+  serviceAccountName: {{.serviceAccountName}}
   timeout: {{.timeout}}

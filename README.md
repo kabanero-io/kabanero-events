@@ -74,7 +74,7 @@ secret. An example Secret has been provided below.
    #known_hosts: <base64 encoded>
 ```
 
-After applying the Secret with `kubectl apply -f ssh-key-secret.yaml`, associate it with the ServiceAccount you created to run the Appsody Tekton builds. For example, this can be done with `kabanero-operator` service account, which is used by the samples by running
+After applying the Secret with `kubectl apply -f ssh-key-secret.yaml`, associate it with the `ServiceAccount` you created to run the Appsody Tekton builds. For example, this can be done with `kabanero-operator` service account, which is used by the samples by running
 ```bash
 $ kubectl edit sa kabanero-operator yaml
 ```
