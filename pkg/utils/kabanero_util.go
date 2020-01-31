@@ -17,18 +17,16 @@ limitations under the License.
 package utils
 
 import (
-	"context"
 	"fmt"
 	"github.com/kabanero-io/kabanero-operator/pkg/apis/kabanero/v1alpha2"
+	"io/ioutil"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog"
+	"net/url"
 	"os"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
 )
 
@@ -55,141 +53,65 @@ func GetKabaneroNamespace() string {
 	return kabaneroNamespace
 }
 
-// GetKabaneroIndexURL Get the URL to kabanero-index.yaml
-func GetKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string, error) {
-	if klog.V(5) {
-		klog.Infof("Entering GetKabaneroIndexURL")
-		defer klog.Infof("Leaving GetKabaneroIndexURL")
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    KABANEROIO,
-		Version:  V1ALPHA1,
-		Resource: KABANEROS,
-	}
-
-	var intfNoNS = dynInterf.Resource(gvr)
-	var intf dynamic.ResourceInterface
-	intf = intfNoNS.Namespace(namespace)
-
-	// fetch the current resource
-	var unstructuredList *unstructured.UnstructuredList
+// GetTriggerFiles returns the directory containing the retrieved trigger files.
+func GetTriggerFiles(client rest.Interface, url *url.URL, skipChkSumVerify bool) (string, error) {
+	/* Get namespace of where kabanero is installed and the kabanero index URL */
+	webhookNamespace := GetKabaneroNamespace()
+	var triggerChkSum string
 	var err error
-	unstructuredList, err = intf.List(metav1.ListOptions{})
+
+	/* Use the trigger URL from the Kabanero CR if none was set */
+	if url == nil {
+		url, triggerChkSum, err = GetTriggerInfo(client, webhookNamespace)
+		if err != nil {
+			klog.Fatal(err)
+		}
+	}
+
+	/* Use a local directory if no scheme was provided or if it's set to file. */
+	if url.Scheme == "" || url.Scheme == "file" {
+		return url.Path, nil
+	}
+
+	/* Otherwise create a temporary directory and try to download/unpack the trigger files there. */
+	triggerDir, err := ioutil.TempDir("", "webhook")
 	if err != nil {
-		klog.Errorf("Unable to list resource of kind kabanero in the namespace %s", namespace)
-		return "", err
+		return "", fmt.Errorf("unable to create temproary directory: %v", err)
 	}
 
-	for _, unstructuredObj := range unstructuredList.Items {
-		if klog.V(5) {
-			klog.Infof("Processing kabanero CRD instance: %v", unstructuredObj)
-		}
-		var objMap = unstructuredObj.Object
-		specMapObj, ok := objMap[SPEC]
-		if !ok {
-			if klog.V(5) {
-				klog.Infof("    kabanero CRD instance: has no spec section. Skipping")
-			}
-			continue
-		}
-
-		specMap, ok := specMapObj.(map[string]interface{})
-		if !ok {
-			if klog.V(5) {
-				klog.Infof("    kabanero CRD instance: spec section is type %T. Skipping", specMapObj)
-			}
-			continue
-		}
-
-		collectionsMapObj, ok := specMap[COLLECTIONS]
-		if !ok {
-			if klog.V(5) {
-				klog.Infof("    kabanero CRD instance: spec section has no collections section. Skipping")
-			}
-			continue
-		}
-		collectionMap, ok := collectionsMapObj.(map[string]interface{})
-		if !ok {
-			if klog.V(5) {
-				klog.Infof("    kabanero CRD instance: collections type is %T. Skipping", collectionsMapObj)
-			}
-			continue
-		}
-
-		repositoriesInterface, ok := collectionMap[REPOSITORIES]
-		if !ok {
-			if klog.V(5) {
-				klog.Infof("    kabanero CRD instance: collections section has no repositories section. Skipping")
-			}
-			continue
-		}
-		repositoriesArray, ok := repositoriesInterface.([]interface{})
-		if !ok {
-			if klog.V(5) {
-				klog.Infof("    kabanero CRD instance: repositories  type is %T. Skipping", repositoriesInterface)
-			}
-			continue
-		}
-		for index, elementObj := range repositoriesArray {
-			elementMap, ok := elementObj.(map[string]interface{})
-			if !ok {
-				if klog.V(5) {
-					klog.Infof("    kabanero CRD instance repositories index %d, types is %T. Skipping", index, elementObj)
-				}
-				continue
-			}
-			activeDefaultCollectionsObj, ok := elementMap[ACTIVATEDEFAULTCOLLECTIONS]
-			if !ok {
-				if klog.V(5) {
-					klog.Infof("    kabanero CRD instance: index %d, activeDefaultCollection not set. Skipping", index)
-				}
-				continue
-			}
-			active, ok := activeDefaultCollectionsObj.(bool)
-			if !ok {
-				if klog.V(5) {
-					klog.Infof("    kabanero CRD instance index %d, activeDefaultCollection, types is %T. Skipping", index, activeDefaultCollectionsObj)
-				}
-				continue
-			}
-			if active {
-				urlObj, ok := elementMap[URL]
-				if !ok {
-					if klog.V(5) {
-						klog.Infof("    kabanero CRD instance: index %d, url set. Skipping", index)
-					}
-					continue
-				}
-				url, ok := urlObj.(string)
-				if !ok {
-					if klog.V(5) {
-						klog.Infof("    kabanero CRD instance index %d, url type is %T. Skipping", index, url)
-					}
-					continue
-				}
-				return url, nil
-			}
-		}
+	err = DownloadTrigger(url.String(), triggerChkSum, triggerDir, !skipChkSumVerify)
+	if err != nil {
+		return "", fmt.Errorf("unable to download trigger archive pointed by URL at %s: %v", url, err)
 	}
-	return "", fmt.Errorf("unable to find collection url in kabanero custom resource for namespace %s", namespace)
+
+	return triggerDir, err
 }
 
-// GetKabaneroIndexURLNew Get the URL to kabanero-index.yaml
-func GetKabaneroIndexURLNew(kc client.Client, namespace string) (string, error) {
+// GetTriggerInfo Get the URL to trigger gzipped tar and its sha256 checksum.
+func GetTriggerInfo(client rest.Interface, namespace string) (*url.URL, string, error) {
 	kabaneroList := v1alpha2.KabaneroList{}
-	err := kc.List(context.Background(), &kabaneroList, client.InNamespace(namespace))
+	err := client.Get().Resource(KABANEROS).Namespace(namespace).Do().Into(&kabaneroList)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 
 	for _, kabanero := range kabaneroList.Items {
+		if klog.V(1) {
+			klog.Infof("Checking for trigger URL in kabanero/%s", kabanero.Name)
+		}
+
 		for _, triggerSpec := range kabanero.Spec.Triggers {
-			klog.Infof("trigger id, sha256, url -> %s, %s, %s", triggerSpec.Id, triggerSpec.Sha256, triggerSpec.Url)
+			if klog.V(1) {
+				klog.Infof("Success. Found trigger '%s' (checksum: %s) -> %s", triggerSpec.Id, triggerSpec.Sha256, triggerSpec.Url)
+			}
+			if triggerSpec.Url != "" {
+				url, err := url.Parse(triggerSpec.Url)
+				return url, triggerSpec.Sha256, err
+			}
 		}
 	}
 
-	return "https://localhost", nil
+	return nil, "", fmt.Errorf("unable to find trigger URL in any kabanero definition")
 }
 
 /*

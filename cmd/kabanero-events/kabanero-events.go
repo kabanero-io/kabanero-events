@@ -23,10 +23,10 @@ import (
 	"github.com/kabanero-io/kabanero-events/pkg/messages"
 	"github.com/kabanero-io/kabanero-events/pkg/trigger"
 	"github.com/kabanero-io/kabanero-events/pkg/utils"
-	"io/ioutil"
-	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/homedir"
 	"k8s.io/klog"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -36,11 +36,8 @@ import (
 
 /* useful constants */
 const (
-	DEFAULTNAMESPACE   = "kabanero"
-	KABANEROINDEXURL   = "KABANERO_INDEX_URL" // use the given URL to fetch kabaneroindex.yaml
-	WEBHOOKDESTINATION = "github"             // name of the destination to send github webhook events
-	tlsCertPath        = "/etc/tls/tls.crt"
-	tlsKeyPath         = "/etc/tls/tls.key"
+	tlsCertPath = "/etc/tls/tls.crt"
+	tlsKeyPath  = "/etc/tls/tls.key"
 )
 
 func init() {
@@ -59,13 +56,13 @@ func init() {
 func main() {
 	// Flags
 	var masterURL string
-	var triggerDir string
+	var triggerURL urlFlag
 	var kubeConfig string
 	var disableTLS bool
 	var skipChkSumVerify bool
 
 	flag.StringVar(&masterURL, "master", "", "overrides the address of the Kubernetes API server in the kubeconfig file (only required if out-of-cluster)")
-	flag.StringVar(&triggerDir, "triggerDir", "", "set to use a local trigger directory")
+	flag.Var(&triggerURL, "triggerURL", "set to override the trigger directory")
 	flag.BoolVar(&disableTLS, "disableTLS", false, "set to use non-TLS listener and listen on port 9080")
 	flag.BoolVar(&skipChkSumVerify, "skipChecksumVerify", false, "set to skip the verification of the trigger collection checksum")
 
@@ -85,6 +82,7 @@ func main() {
 	klog.Infof("disableTLS: %v", disableTLS)
 	klog.Infof("skipChecksumVerify: %v", skipChkSumVerify)
 
+	/* Set up clients */
 	cfg, err := utils.NewKubeConfig(masterURL, kubeConfig)
 	if err != nil {
 		klog.Fatal(err)
@@ -95,24 +93,31 @@ func main() {
 		klog.Fatal(err)
 	}
 
+	kabCfg, err := utils.NewKabConfig(masterURL, kubeConfig)
+	if err != nil {
+		klog.Fatal(err)
+	}
+
+	kabClient, err := rest.UnversionedRESTClientFor(kabCfg)
+	if err != nil {
+		klog.Fatal(err)
+	}
+
 	dynamicClient, err := utils.NewDynamicClient(cfg)
 	if err != nil {
 		klog.Fatal(err)
 	}
 
-	klog.Infof("Received kubeClient %T, dynamicClient  %T\n", kubeClient, dynamicClient)
+	klog.Infof("Received kubeClient %T, dynamicClient %T, kabClient %T\n", kubeClient, dynamicClient, kabClient)
 
-	/* Download the trigger collection if a local directory was not specified. */
-	if triggerDir == "" {
-		triggerDir, err = getTriggerFiles(dynamicClient, skipChkSumVerify)
-		if err != nil {
-			klog.Fatal(err)
-		}
-		defer os.RemoveAll(triggerDir)
+	/* Now get the trigger files (or use local ones) */
+	triggerDir, err := utils.GetTriggerFiles(kabClient, triggerURL.url, skipChkSumVerify)
+	if err != nil {
+		klog.Fatal(err)
 	}
+	klog.Infof("Using trigger directory: %s, url %s", triggerDir, triggerURL.url)
 
 	providerCfg := filepath.Join(triggerDir, "eventDefinitions.yaml")
-
 	if _, err := os.Stat(providerCfg); os.IsNotExist(err) {
 		// Tolerate this for now.
 		klog.Errorf("eventDefinitions.yaml was not found: %s", providerCfg)
@@ -156,30 +161,23 @@ func main() {
 	select {}
 }
 
-func getTriggerFiles(dynamicClient dynamic.Interface, skipChkSumVerify bool) (string, error) {
-	/* Get namespace of where kabanero is installed and the kabanero index URL */
-	webhookNamespace := utils.GetKabaneroNamespace()
-	kabaneroIndexURL := os.Getenv(KABANEROINDEXURL)
-	var err error
+type urlFlag struct {
+	url *url.URL
+}
 
-	if kabaneroIndexURL == "" {
-		// not overridden, use the one in the kabanero CRD
-		kabaneroIndexURL, err = utils.GetKabaneroIndexURL(dynamicClient, webhookNamespace)
-		if err != nil {
-			return "", fmt.Errorf("unable to get kabanero index URL from kabanero CRD. Error: %s", err)
-		}
-	} else {
-		klog.Infof("Using value of KABANERO_INDEX_URL environment variable to fetch kabanero index from: %s", kabaneroIndexURL)
+func (flag *urlFlag) String() string {
+	if flag.url != nil {
+		return flag.url.String()
 	}
-	/* Download the trigger into temp directory */
-	triggerDir, err := ioutil.TempDir("", "webhook")
+	return ""
+}
+
+func (flag *urlFlag) Set(val string) error {
+	url, err := url.Parse(val)
 	if err != nil {
-		return "", fmt.Errorf("unable to create temproary directory. Error: %s", err)
+		return err
 	}
 
-	err = utils.DownloadTrigger(kabaneroIndexURL, triggerDir, !skipChkSumVerify)
-	if err != nil {
-		return "", fmt.Errorf("unable to download trigger pointed by kabanero_index_url at: %s, error: %s", kabaneroIndexURL, err)
-	}
-	return triggerDir, err
+	flag.url = url
+	return nil
 }

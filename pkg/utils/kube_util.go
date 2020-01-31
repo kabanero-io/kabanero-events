@@ -18,8 +18,11 @@ package utils
 
 import (
 	"bytes"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
@@ -66,6 +69,19 @@ func NewKubeConfig(masterURL, kubeconfigPath string) (*rest.Config, error) {
 	}
 
 	return cfg, err
+}
+
+// NewKabConfig Creates a new kabanero client config
+func NewKabConfig(masterURL, kubeconfigPath string) (*rest.Config, error) {
+	crdConfig, err := NewKubeConfig(masterURL, kubeconfigPath)
+	if err != nil {
+		return nil, err
+	}
+	crdConfig.ContentConfig.GroupVersion = &schema.GroupVersion{Group: KABANEROIO, Version: "v1alpha2"}
+	crdConfig.APIPath = "/apis"
+	crdConfig.NegotiatedSerializer = serializer.DirectCodecFactory{CodecFactory: scheme.Codecs}
+	crdConfig.UserAgent = rest.DefaultKubernetesUserAgent()
+	return crdConfig, nil
 }
 
 // NewKubeClient Creates a new kube client

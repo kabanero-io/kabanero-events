@@ -94,7 +94,7 @@ func (s *Service) GetProvider(name string) Provider {
 	return s.providers[name]
 }
 
-// GetNode returns the node with the hane `name`.
+// GetNode returns the node with the name `name`.
 func (s *Service) GetNode(name string) *EventNode {
 	for _, node := range s.eventDefinition.EventDestinations {
 		if node.Name == name {
