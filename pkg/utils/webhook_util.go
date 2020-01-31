@@ -125,93 +125,20 @@ func YAMLToMap(bytes []byte) (map[string]interface{}, error) {
 	return myMap, nil
 }
 
-// GetTriggerURL Get the URL and sha256 checksum of where the trigger is stored
-func GetTriggerURL(collection map[string]interface{}, verifyChkSum bool) (string, string, error) {
-	triggersObj, ok := collection[TRIGGERS]
-	if !ok {
-		return "", "", fmt.Errorf("collection does not contain triggers: section")
-	}
-
-	triggersArray, ok := triggersObj.([]interface{})
-	if !ok {
-		return "", "", fmt.Errorf("collection does not contain triggers section is not an array")
-	}
-
-	var retURL = ""
-	var retChkSum = ""
-
-	for index, arrayElement := range triggersArray {
-		mapObj, ok := arrayElement.(map[interface{}]interface{})
-		if !ok {
-			return "", "", fmt.Errorf("triggers section at index %d is not properly formed", index)
-		}
-		urlObj, ok := mapObj[URL]
-		if !ok {
-			return "", "", fmt.Errorf("triggers section at index %d does not contain url", index)
-		}
-		url, ok := urlObj.(string)
-		if !ok {
-			return "", "", fmt.Errorf("triggers section at index %d url is not a string: %v", index, urlObj)
-		}
-		retURL = url
-
-		if verifyChkSum {
-			chksumObj, ok := mapObj[CHKSUM]
-			if !ok {
-				return "", "", fmt.Errorf("triggers section at index %d does not contain sha256 checksum", index)
-			}
-			chksum, ok := chksumObj.(string)
-			if !ok {
-				return "", "", fmt.Errorf("triggers section at index %d is not a string: %v", index, chksumObj)
-			}
-			retChkSum = chksum
-		}
-	}
-
-	if retURL == "" {
-		return "", "", fmt.Errorf("unable to find url from triggers section")
-	}
-
-	if verifyChkSum && retChkSum == "" {
-		return "", "", fmt.Errorf("unable to find sha256 checksum from triggers section")
-	}
-
-	return retURL, retChkSum, nil
-}
-
 /*
 DownloadTrigger Download the trigger.tar.gz and unpack into the directory
-  kabaneroIndexUrl: URL that serves kabanero-index.yaml
+  triggerURL: URL that serves the trigger gzipped tar
+  triggerChkSum: the sha256 checksum of the trigger archive
   dir: directory to unpack the trigger.tar.gz
 */
-func DownloadTrigger(kabaneroIndexURL string, dir string, verifyChkSum bool) error {
+func DownloadTrigger(triggerURL, triggerChkSum, dir string, verifyChkSum bool) error {
 	if klog.V(5) {
-		klog.Infof("Entering downloadTrigger kabaneroIndexURL: %s, directory to store trigger: %s", kabaneroIndexURL, dir)
-		defer klog.Infof("Leaving downloadTrigger kabaneroIndexURL: %s, directory to store trigger: %s", kabaneroIndexURL, dir)
-	}
-
-	kabaneroIndexBytes, err := ReadHTTPURL(kabaneroIndexURL)
-	if err != nil {
-		return err
-	}
-	if klog.V(5) {
-		klog.Infof("Retrieved kabanero index file: %s", string(kabaneroIndexBytes))
-	}
-	kabaneroIndexMap, err := YAMLToMap(kabaneroIndexBytes)
-	if err != nil {
-		return err
-	}
-	triggerURL, triggerChkSum, err := GetTriggerURL(kabaneroIndexMap, verifyChkSum)
-	if err != nil {
-		return err
-	}
-
-	if klog.V(5) {
-		klog.Infof("Found trigger with URL %s and sha256 checksum of %s", triggerURL, triggerChkSum)
+		klog.Infof("Entering downloadTrigger triggerURL: %s, directory to store trigger: %s", triggerURL, dir)
+		defer klog.Infof("Leaving downloadTrigger triggerURL: %s, directory to store trigger: %s", triggerURL, dir)
 	}
 
 	triggerArchiveName := filepath.Join(dir, "incubator.trigger.tar.gz")
-	err = downloadFileTo(triggerURL, triggerArchiveName)
+	err := downloadFileTo(triggerURL, triggerArchiveName)
 	if err != nil {
 		return err
 	}

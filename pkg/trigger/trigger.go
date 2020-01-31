@@ -1482,17 +1482,17 @@ func (p *Processor) downloadYAMLCEL(webhookMessage ref.Val, fileNameVal ref.Val)
 	}
 
 	var ret = make(map[string]interface{})
-	fileContent, exists, err := utils.DownloadYAML(p.env.DynamicClient, headerMap, bodyMap, fileName)
+	fileContent, exists, err := utils.DownloadYAML(p.env.KubeClient, headerMap, bodyMap, fileName)
 	ret["exists"] = exists
 	if err != nil {
 		ret["error"] = fmt.Sprintf("%v", err)
 		if klog.V(5) {
-			klog.Infof("downloadYAMLCEI error: %v", err)
+			klog.Infof("downloadYAMLCEL error: %v", err)
 		}
 	} else {
 		ret["content"] = fileContent
 		if klog.V(5) {
-			klog.Infof("downloadYAMLCEI content: %v", fileContent)
+			klog.Infof("downloadYAMLCEL content: %v", fileContent)
 		}
 	}
 	return types.NewDynamicMap(types.DefaultTypeAdapter, ret)

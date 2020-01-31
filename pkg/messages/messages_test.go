@@ -35,6 +35,9 @@ func getEventDefinitions(provider string) string {
  * TestReadEventProviders tests that event providers can be unmarshalled.
  */
 func TestReadEventProviders(t *testing.T) {
+	// Comment out following line to run the example
+	t.SkipNow()
+
 	_, err := messages.NewService(getEventDefinitions("providers0"))
 	if err != nil {
 		t.Fatal(err)

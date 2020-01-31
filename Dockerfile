@@ -18,14 +18,9 @@ FROM golang as builder
 
 WORKDIR $GOPATH/src/github.com/kabanero-io/kabanero-events
 
-# install dep tool
-RUN curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
-
-# Copy dependecies over
-COPY  Gopkg.* ./
-
-# load vendor dependent packages
-RUN dep ensure -v -vendor-only
+# Copy dependencies over and then download them
+COPY go.mod go.sum ./
+RUN go mod download
 
 # Copy source over
 COPY cmd ./cmd

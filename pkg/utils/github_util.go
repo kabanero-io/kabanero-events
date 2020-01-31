@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/google/go-github/github"
-	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 	"net/http"
 )
@@ -120,7 +120,7 @@ DownloadYAML Downloads a YAML file from a git repository.
   header: HTTP header from webhook
   bodyMap: HTTP  message body from webhook
 */
-func DownloadYAML(dynInterf dynamic.Interface, header map[string][]string, bodyMap map[string]interface{}, fileName string) (map[string]interface{}, bool, error) {
+func DownloadYAML(kubeClient *kubernetes.Clientset, header map[string][]string, bodyMap map[string]interface{}, fileName string) (map[string]interface{}, bool, error) {
 
 	hostHeader, isEnterprise := header[http.CanonicalHeaderKey("x-github-enterprise-host")]
 	var host string
@@ -138,9 +138,9 @@ func DownloadYAML(dynInterf dynamic.Interface, header map[string][]string, bodyM
 	}
 
 	namespace := GetKabaneroNamespace()
-	user, token, _, err := GetURLAPIToken(dynInterf, namespace, htmlURL)
+	user, token, err := GetGitHubSecret(kubeClient, namespace, htmlURL)
 	if err != nil {
-		return nil, false, fmt.Errorf("unable to get user/token secrets for URL %v", htmlURL)
+		return nil, false, fmt.Errorf("unable to get user/token secret for URL %s: %v", htmlURL, err)
 	}
 
 	githubURL := "https://" + host

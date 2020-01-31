@@ -17,13 +17,15 @@ limitations under the License.
 package utils
 
 import (
-	"encoding/base64"
 	"fmt"
+	"github.com/kabanero-io/kabanero-operator/pkg/apis/kabanero/v1alpha2"
+	"io/ioutil"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -51,272 +53,131 @@ func GetKabaneroNamespace() string {
 	return kabaneroNamespace
 }
 
-// GetKabaneroIndexURL Get the URL to kabanero-index.yaml
-func GetKabaneroIndexURL(dynInterf dynamic.Interface, namespace string) (string, error) {
-	if klog.V(5) {
-		klog.Infof("Entering GetKabaneroIndexURL")
-		defer klog.Infof("Leaving GetKabaneroIndexURL")
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    KABANEROIO,
-		Version:  V1ALPHA1,
-		Resource: KABANEROS,
-	}
-
-	var intfNoNS = dynInterf.Resource(gvr)
-	var intf dynamic.ResourceInterface
-	intf = intfNoNS.Namespace(namespace)
-
-	// fetch the current resource
-	var unstructuredList *unstructured.UnstructuredList
+// GetTriggerFiles returns the directory containing the retrieved trigger files.
+func GetTriggerFiles(client rest.Interface, url *url.URL, skipChkSumVerify bool) (string, error) {
+	/* Get namespace of where kabanero is installed and the kabanero index URL */
+	webhookNamespace := GetKabaneroNamespace()
+	var triggerChkSum string
 	var err error
-	unstructuredList, err = intf.List(metav1.ListOptions{})
+
+	/* Use the trigger URL from the Kabanero CR if none was set */
+	if url == nil {
+		url, triggerChkSum, err = GetTriggerInfo(client, webhookNamespace)
+		if err != nil {
+			klog.Fatal(err)
+		}
+	}
+
+	/* Use a local directory if no scheme was provided or if it's set to file. */
+	if url.Scheme == "" || url.Scheme == "file" {
+		return url.Path, nil
+	}
+
+	/* Otherwise create a temporary directory and try to download/unpack the trigger files there. */
+	triggerDir, err := ioutil.TempDir("", "webhook")
 	if err != nil {
-		klog.Errorf("Unable to list resource of kind kabanero in the namespace %s", namespace)
-		return "", err
+		return "", fmt.Errorf("unable to create temproary directory: %v", err)
 	}
 
-	for _, unstructuredObj := range unstructuredList.Items {
-		if klog.V(5) {
-			klog.Infof("Processing kabanero CRD instance: %v", unstructuredObj)
-		}
-		var objMap = unstructuredObj.Object
-		specMapObj, ok := objMap[SPEC]
-		if !ok {
-			if klog.V(5) {
-				klog.Infof("    kabanero CRD instance: has no spec section. Skipping")
-			}
-			continue
+	err = DownloadTrigger(url.String(), triggerChkSum, triggerDir, !skipChkSumVerify)
+	if err != nil {
+		return "", fmt.Errorf("unable to download trigger archive pointed by URL at %s: %v", url, err)
+	}
+
+	return triggerDir, err
+}
+
+// GetTriggerInfo Get the URL to trigger gzipped tar and its sha256 checksum.
+func GetTriggerInfo(client rest.Interface, namespace string) (*url.URL, string, error) {
+	kabaneroList := v1alpha2.KabaneroList{}
+	err := client.Get().Resource(KABANEROS).Namespace(namespace).Do().Into(&kabaneroList)
+	if err != nil {
+		return nil, "", err
+	}
+
+	for _, kabanero := range kabaneroList.Items {
+		if klog.V(1) {
+			klog.Infof("Checking for trigger URL in kabanero/%s", kabanero.Name)
 		}
 
-		specMap, ok := specMapObj.(map[string]interface{})
-		if !ok {
-			if klog.V(5) {
-				klog.Infof("    kabanero CRD instance: spec section is type %T. Skipping", specMapObj)
+		for _, triggerSpec := range kabanero.Spec.Triggers {
+			if klog.V(1) {
+				klog.Infof("Success. Found trigger '%s' (checksum: %s) -> %s", triggerSpec.Id, triggerSpec.Sha256, triggerSpec.Url)
 			}
-			continue
-		}
-
-		collectionsMapObj, ok := specMap[COLLECTIONS]
-		if !ok {
-			if klog.V(5) {
-				klog.Infof("    kabanero CRD instance: spec section has no collections section. Skipping")
-			}
-			continue
-		}
-		collectionMap, ok := collectionsMapObj.(map[string]interface{})
-		if !ok {
-			if klog.V(5) {
-				klog.Infof("    kabanero CRD instance: collections type is %T. Skipping", collectionsMapObj)
-			}
-			continue
-		}
-
-		repositoriesInterface, ok := collectionMap[REPOSITORIES]
-		if !ok {
-			if klog.V(5) {
-				klog.Infof("    kabanero CRD instance: collections section has no repositories section. Skipping")
-			}
-			continue
-		}
-		repositoriesArray, ok := repositoriesInterface.([]interface{})
-		if !ok {
-			if klog.V(5) {
-				klog.Infof("    kabanero CRD instance: repositories  type is %T. Skipping", repositoriesInterface)
-			}
-			continue
-		}
-		for index, elementObj := range repositoriesArray {
-			elementMap, ok := elementObj.(map[string]interface{})
-			if !ok {
-				if klog.V(5) {
-					klog.Infof("    kabanero CRD instance repositories index %d, types is %T. Skipping", index, elementObj)
-				}
-				continue
-			}
-			activeDefaultCollectionsObj, ok := elementMap[ACTIVATEDEFAULTCOLLECTIONS]
-			if !ok {
-				if klog.V(5) {
-					klog.Infof("    kabanero CRD instance: index %d, activeDefaultCollection not set. Skipping", index)
-				}
-				continue
-			}
-			active, ok := activeDefaultCollectionsObj.(bool)
-			if !ok {
-				if klog.V(5) {
-					klog.Infof("    kabanero CRD instance index %d, activeDefaultCollection, types is %T. Skipping", index, activeDefaultCollectionsObj)
-				}
-				continue
-			}
-			if active {
-				urlObj, ok := elementMap[URL]
-				if !ok {
-					if klog.V(5) {
-						klog.Infof("    kabanero CRD instance: index %d, url set. Skipping", index)
-					}
-					continue
-				}
-				url, ok := urlObj.(string)
-				if !ok {
-					if klog.V(5) {
-						klog.Infof("    kabanero CRD instance index %d, url type is %T. Skipping", index, url)
-					}
-					continue
-				}
-				return url, nil
+			if triggerSpec.Url != "" {
+				url, err := url.Parse(triggerSpec.Url)
+				return url, triggerSpec.Sha256, err
 			}
 		}
 	}
-	return "", fmt.Errorf("unable to find collection url in kabanero custom resource for namespace %s", namespace)
+
+	return nil, "", fmt.Errorf("unable to find trigger URL in any kabanero definition")
 }
 
 /*
-GetURLAPIToken Find the user/token for a GitHub API key. The format of the secret:
+GetGitHubSecret Find the user/token for a GitHub API key. The format of the secret:
 apiVersion: v1
 kind: Secret
 metadata:
-  name:  kabanero-org-test-secret
-  namespace: kabanero
+  name: gh-https-secret
   annotations:
-   url: https://github.ibm.com/kabanero-org-test
-type: Opaque
+    tekton.dev/git-0: https://github.com
+type: kubernetes.io/basic-auth
 stringData:
-  url: <url to org or repo>
-data:
-  username:  <base64 encoded user name>
-  token: <base64 encoded token>
+  username: <username>
+  password: <token>
 
- If the url in the secret is a prefix of repoURL, and username and token are defined, then return the user and token.
- Return user, token, error.
- TODO: Change to controller pattern and cache the secrets.
+This will scan for a secret with either of the following annotations:
+ * tekton.dev/git-*
+ * kabanero.io/git-*
 
-Return: username, token, secret name, error
+GetGitHubSecret will return the username and token of a secret whose annotation's value is a prefix match for repoURL.
+Note that a secret with the `kabanero.io/git-*` annotation is preferred over one with `tekton.dev/git-*`.
+Return: username, token, error
 */
-func GetURLAPIToken(dynInterf dynamic.Interface, namespace string, repoURL string) (string, string, string, error) {
-	if klog.V(5) {
-		klog.Infof("GetURLAPIToken namespace: %s, repoURL: %s", namespace, repoURL)
+func GetGitHubSecret(client *kubernetes.Clientset, namespace string, repoURL string) (string, string, error) {
+	// TODO: Change to controller pattern and cache the secrets.
+	if klog.V(8) {
+		klog.Infof("GetGitHubSecret namespace: %s, repoURL: %s", namespace, repoURL)
 	}
 
-	gvr := schema.GroupVersionResource{
-		Group:    "",
-		Version:  V1,
-		Resource: SECRETS,
-	}
-
-	var intfNoNS = dynInterf.Resource(gvr)
-	var intf dynamic.ResourceInterface
-	intf = intfNoNS.Namespace(namespace)
-
-	// fetch the current resource
-	var unstructuredList *unstructured.UnstructuredList
-	var err error
-	unstructuredList, err = intf.List(metav1.ListOptions{})
+	secrets, err := client.CoreV1().Secrets(namespace).List(metav1.ListOptions{})
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 
-	for _, unstructuredObj := range unstructuredList.Items {
-		var objMap = unstructuredObj.Object
+	secret := getGitHubSecretForRepo(secrets, repoURL)
+	if secret == nil {
+		return "", "", fmt.Errorf("unable to find GitHub token for url: %s", repoURL)
+	}
 
-		metadataObj, ok := objMap[METADATA]
-		if !ok {
-			continue
-		}
+	username, ok := secret.Data["username"]
+	if !ok {
+		return "", "", fmt.Errorf("unable to find username field of secret: %s", secret.Name)
+	}
 
-		metadata, ok := metadataObj.(map[string]interface{})
-		if !ok {
-			continue
-		}
+	token, ok := secret.Data["password"]
+	if !ok {
+		return "", "", fmt.Errorf("unable to find password field of secret: %s", secret.Namespace)
+	}
 
-		annotationsObj, ok := metadata[ANNOTATIONS]
-		if !ok {
-			continue
-		}
+	return string(username), string(token), nil
+}
 
-		annotations, ok := annotationsObj.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		tektonList := make([]string, 0)
-		kabaneroList := make([]string, 0)
-		for key, val := range annotations {
-			if strings.HasPrefix(key, "kabanero.io/git-") {
-				url, ok := val.(string)
-				if ok {
-					kabaneroList = append(kabaneroList, url)
-				}
-			} else if strings.HasPrefix(key, "tekton.dev/git-") {
-				url, ok := val.(string)
-				if ok {
-					tektonList = append(tektonList, url)
-				}
+func getGitHubSecretForRepo(secrets *v1.SecretList, repoURL string) *v1.Secret {
+	var tknSecret *v1.Secret
+	for i, secret := range secrets.Items {
+		for key, val := range secret.Annotations {
+			if strings.HasPrefix(key, "tekton.dev/git-") && strings.HasPrefix(repoURL, val) {
+				tknSecret = &secrets.Items[i]
+			} else if strings.HasPrefix(key, "kabanero.io/git-") && strings.HasPrefix(repoURL, val) {
+				// Since we prefer the kabanero.io annotation, we can terminate early if we find one that matches.
+				return &secrets.Items[i]
 			}
 		}
-
-		/* find that annotation that is a match */
-		urlMatched, matchedURL := matchPrefix(repoURL, kabaneroList)
-		if !urlMatched {
-			urlMatched, matchedURL = matchPrefix(repoURL, tektonList)
-		}
-		if !urlMatched {
-			/* no match */
-			continue
-		}
-		if klog.V(5) {
-			klog.Infof("getURLAPIToken found match %v", matchedURL)
-		}
-
-		nameObj, ok := metadata["name"]
-		if !ok {
-			continue
-		}
-		name, ok := nameObj.(string)
-		if !ok {
-			continue
-		}
-
-		dataMapObj, ok := objMap[DATA]
-		if !ok {
-			continue
-		}
-
-		dataMap, ok := dataMapObj.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		usernameObj, ok := dataMap[USERNAME]
-		if !ok {
-			continue
-		}
-		username, ok := usernameObj.(string)
-		if !ok {
-			continue
-		}
-
-		tokenObj, ok := dataMap[PASSWORD]
-		if !ok {
-			continue
-		}
-		token, ok := tokenObj.(string)
-		if !ok {
-			continue
-		}
-
-		decodedUserName, err := base64.StdEncoding.DecodeString(username)
-		if err != nil {
-			return "", "", "", err
-		}
-
-		decodedToken, err := base64.StdEncoding.DecodeString(token)
-		if err != nil {
-			return "", "", "", err
-		}
-		return string(decodedUserName), string(decodedToken), name, nil
 	}
-	return "", "", "", fmt.Errorf("unable to find API token for url: %s", repoURL)
+
+	return tknSecret
 }
 
 /*

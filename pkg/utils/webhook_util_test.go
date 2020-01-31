@@ -176,26 +176,6 @@ stacks:
   version: 0.2.5
 `
 
-func TestGetTriggerURL(t *testing.T) {
-	collectionMap, err := utils.YAMLToMap([]byte(kabaneroIndex))
-	if err != nil {
-		t.Fatal(err)
-	}
-	url, chksum, err := utils.GetTriggerURL(collectionMap, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if url != "https://host/trigger-path" {
-		t.Fatal(fmt.Errorf("unexptect url. Expecting: https://host/trigger-path, got : %s", url))
-	}
-
-	if chksum != "270fe2e576132a6fb247755762b4556d6ff215d3507d66643304ea97cb2ec58e" {
-		t.Fatal(fmt.Errorf("unexpected sha256 checksum. Expecting: '%s', got: '%s'",
-			"270fe2e576132a6fb247755762b4556d6ff215d3507d66643304ea97cb2ec58e",
-			chksum))
-	}
-}
-
 type mergePathData struct {
 	dir     string
 	toMerge string
