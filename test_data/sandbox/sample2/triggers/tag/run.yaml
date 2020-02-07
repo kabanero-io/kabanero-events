@@ -11,7 +11,7 @@ spec:
   resources:
     - name: docker-src-image
       resourceRef:
-        name: docker-from-{{.nameSuffix}}
+        name: docker-src-{{.nameSuffix}}
     - name: docker-dest-image
       resourceRef:
-        name: docker-to-{{.nameSuffix}}
+        name: docker-dest-{{.nameSuffix}}

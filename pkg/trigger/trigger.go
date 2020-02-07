@@ -390,7 +390,6 @@ func (p *Processor) ProcessMessage(message map[string]interface{}, eventSource s
 		_, err = p.evalArrayObject(env, variables, bodyArray, depth)
 		if err != nil {
 			klog.Errorf("Error evaluating trigger %v: ERROR MESSAGE: %v", trigger, err)
-			klog.Fatal(err)
 			return nil, err
 		}
 		if klog.V(5) {
@@ -1422,6 +1421,45 @@ func (p *Processor) splitCEL(strVal ref.Val, sepVal ref.Val) ref.Val {
 	return types.NewStringList(types.DefaultTypeAdapter, arrayStr)
 }
 
+/* implementation of substring for CEL: returns a substring of the provided string up to the end index */
+func (p *Processor) substringCEL(strVal ref.Val, indexVal ref.Val) ref.Val {
+	str, err := valToString(strVal)
+	if err != nil {
+		return types.ValOrErr(strVal, err.Error())
+	}
+
+	index, err := valToInt(indexVal)
+	if err != nil {
+		return types.ValOrErr(indexVal, err.Error())
+	}
+
+	// index is greater than str length -- return original str
+	if index >= len(str) {
+		return strVal
+	}
+
+	return types.String(str[:index])
+}
+
+func valToString(strVal ref.Val) (string, error) {
+	str, ok := strVal.(types.String)
+
+	if !ok {
+		return "", fmt.Errorf("expected string argument but got %v with value '%v'", strVal.Type(), strVal.Value())
+	}
+
+	return string(str), nil
+}
+
+func valToInt(intVal ref.Val) (int, error) {
+	i, ok := intVal.(types.Int)
+	if !ok {
+		return 0, fmt.Errorf("expected int argument but got %v with value '%v'", intVal.Type(), intVal.Value())
+	}
+
+	return int(i), nil
+}
+
 /* Return next job ID */
 func (p *Processor) jobIDCEL(values ...ref.Val) ref.Val {
 	return types.String(GetTimestamp())
@@ -2045,7 +2083,9 @@ func (p *Processor) initCELFuncs() {
 		decls.NewFunction("toLabel",
 			decls.NewOverload("toLabel_string", []*exprpb.Type{decls.String}, decls.String)),
 		decls.NewFunction("split",
-			decls.NewOverload("split_string", []*exprpb.Type{decls.String, decls.String}, decls.NewListType(decls.String))))
+			decls.NewOverload("split_string", []*exprpb.Type{decls.String, decls.String}, decls.NewListType(decls.String))),
+		decls.NewFunction("substring",
+			decls.NewOverload("substring", []*exprpb.Type{decls.String, decls.Int}, decls.String)))
 
 	p.triggerFuncs = cel.Functions(
 		&functions.Overload{
@@ -2078,5 +2118,8 @@ func (p *Processor) initCELFuncs() {
 		&functions.Overload{
 			Operator: "split",
 			Binary:   p.splitCEL},
+		&functions.Overload{
+			Operator: "substring",
+			Binary:   p.substringCEL},
 	)
 }
