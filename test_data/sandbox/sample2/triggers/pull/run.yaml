@@ -5,10 +5,13 @@ metadata:
   namespace: {{.namespace}}
 spec:
   pipelineRef:
-    name: {{.collectionID}}-build-only-pipeline
+    name: {{.collectionID}}-build-pl
   resources:
   - name: git-source
     resourceRef:
       name: git-{{.nameSuffix}}
+  - name: docker-image
+    resourceRef:
+      name: docker-{{.nameSuffix}}
   serviceAccountName: {{.serviceAccountName}}
   timeout: {{.timeout}}
