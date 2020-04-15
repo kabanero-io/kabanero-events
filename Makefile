@@ -15,6 +15,15 @@ lint:
 vet:
 	go vet github.com/kabanero-io/kabanero-events/...
 
+push-manifest:
+	echo "IMAGE="$(IMAGE)
+	docker manifest create $(IMAGE) $(IMAGE)-amd64 $(IMAGE)-ppc64le $(IMAGE)-s390x
+	docker manifest annotate $(IMAGE) $(IMAGE)-amd64   --os linux --arch amd64
+	docker manifest annotate $(IMAGE) $(IMAGE)-ppc64le --os linux --arch ppc64le
+	docker manifest annotate $(IMAGE) $(IMAGE)-s390x   --os linux --arch s390x
+	docker manifest inspect $(IMAGE)
+	docker manifest push $(IMAGE) -p
+
 test:
 	go test ./...
 
